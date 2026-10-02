@@ -52,7 +52,7 @@ func runWithArgs(args []string) (resultErr error) {
 			resultErr = errors.Join(resultErr, err)
 		}
 	}()
-	if _, err := tea.NewProgram(m, tea.WithContext(ctx), tea.WithoutSignalHandler()).Run(); err != nil && ctx.Err() == nil {
+	if _, err := tea.NewProgram(m, tea.WithContext(ctx), tea.WithOutput(terminalOutput{os.Stdout}), tea.WithoutSignalHandler()).Run(); err != nil && ctx.Err() == nil {
 		return fmt.Errorf("terminal session failed")
 	}
 	return nil

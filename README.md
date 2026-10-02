@@ -16,6 +16,8 @@ Bubble Tea v2.0.9, Lip Gloss v2.0.0, and ANSI layout helpers. Bubbles components
 were not needed for these screens. Bubble Tea includes the upstream fix that
 ensures clear-screen requests repaint even when the view has already been drawn.
 The renderer dependency includes the fix for unsolicited debug-file creation.
+Terminal output uses the widely supported column-position command so older
+terminal multiplexers reporting `TERM=screen` render list columns correctly.
 
 ```bash
 go build -o aaptui ./cmd/aaptui
@@ -161,7 +163,10 @@ unsafe links/redirects, every required resource type, workflow nodes, bounded
 storage, older-history reload, retries, delayed final output, cleanup, and
 confirmation/status reconciliation. Integration tests drive the TUI against
 synthetic HTTPS APIs for both modes. Terminal interaction still needs manual
-validation in the user's terminal, and deployed AAP 2.6 validation remains deferred.
+validation in the user's terminal. A Linux pseudo-terminal regression emulates
+older `TERM=screen` sessions at 237 columns by 62 rows, checks the initial list
+columns, and selects and opens the last template. Deployed AAP 2.6 validation
+remains deferred.
 
 Launching, relaunching, editing, approval/denial, and WebSocket transport are not
 implemented. Server cancellation permissions and capability/state responses remain
