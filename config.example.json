@@ -1,0 +1,5 @@
+{
+  "url": "https://aap.example.com",
+  "connection_mode": "gateway",
+  "tls_verify": true
+}

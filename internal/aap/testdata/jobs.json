@@ -1,0 +1,10 @@
+{"count":8,"next":null,"previous":null,"results":[
+{"id":1,"type":"job","name":"playbook","status":"running","playbook":"site.yml","related":{"stdout":"/api/v2/jobs/1/stdout/","cancel":"/api/v2/jobs/1/cancel/"}},
+{"id":2,"type":"workflow_job","name":"workflow","status":"running","related":{"workflow_nodes":"/api/v2/workflow_jobs/2/workflow_nodes/","cancel":"/api/v2/workflow_jobs/2/cancel/"}},
+{"id":3,"type":"project_update","name":"project","status":"successful","scm_type":"git","related":{"stdout":"/api/v2/project_updates/3/stdout/"}},
+{"id":4,"type":"inventory_update","name":"inventory","status":"failed","source":"ec2","related":{"stdout":"/api/v2/inventory_updates/4/stdout/"}},
+{"id":5,"type":"ad_hoc_command","name":"adhoc","status":"pending","module_name":"ping","related":{"stdout":"/api/v2/ad_hoc_commands/5/stdout/"}},
+{"id":6,"type":"system_job","name":"cleanup","status":"successful","job_type":"cleanup_jobs"},
+{"id":7,"type":"workflow_approval","name":"approve","status":"pending","timeout":120,"timed_out":false},
+{"id":8,"type":"future_job","name":"future","status":"alien"}
+]}
