@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"aaptui/internal/aap"
 )
 
@@ -40,7 +42,13 @@ func TestOutputScrollAndLeave(t *testing.T) {
 		t.Fatal("scroll")
 	}
 	_, cmd = m.Update(key("esc"))
-	m.Update(cmd())
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok {
+		t.Fatal("leaving output did not schedule both cleanup and repaint")
+	}
+	for _, command := range batch {
+		m.Update(command())
+	}
 	if m.screen != jobScreen || !f.stopped || !f.closed {
 		t.Fatal("session not closed")
 	}

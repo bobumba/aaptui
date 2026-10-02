@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -98,6 +99,111 @@ type terminalWrites chan string
 func (w terminalWrites) Write(p []byte) (int, error) {
 	w <- string(p)
 	return len(p), nil
+}
+
+func runTerminal(t *testing.T, m *Model) (*tea.Program, func(func(string) bool)) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	writes := make(terminalWrites, 64)
+	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(writes), tea.WithWindowSize(80, 24), tea.WithEnvironment([]string{"TERM=xterm-256color"}), tea.WithoutSignalHandler())
+	done := make(chan error, 1)
+	go func() {
+		_, err := p.Run()
+		done <- err
+	}()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil && !errors.Is(err, tea.ErrProgramKilled) {
+			t.Error(err)
+		}
+		if err := m.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	waitFor := func(match func(string) bool) {
+		t.Helper()
+		for {
+			select {
+			case output := <-writes:
+				if match(output) {
+					return
+				}
+			case <-ctx.Done():
+				t.Fatal("timed out waiting for terminal redraw")
+			}
+		}
+	}
+	return p, waitFor
+}
+
+func TestListResultsRepaintUnchangedView(t *testing.T) {
+	for _, screen := range []screen{templatesScreen, jobsScreen, workflowScreen} {
+		t.Run(fmt.Sprintf("screen%d", screen), func(t *testing.T) {
+			m := New(context.Background(), "gateway")
+			m.screen = screen
+			result := resultMsg{}
+			switch screen {
+			case templatesScreen:
+				m.templatePage.Items = []aap.TemplateSummary{{Name: "initial resource"}}
+				result.value = m.templatePage
+			case jobsScreen:
+				m.jobPage.Items = []aap.JobSummary{{Name: "initial resource"}}
+				result.value = m.jobPage
+			case workflowScreen:
+				m.nodePage.Items = []aap.WorkflowNode{{Name: "initial resource"}}
+				result.value = m.nodePage
+			}
+			p, waitFor := runTerminal(t, m)
+			waitFor(func(s string) bool { return strings.Contains(s, "initial resource") })
+			// A clear command can arrive after the result's frame has already
+			// been flushed. It must repaint without waiting for selection to move,
+			// including when a refresh returns the same data.
+			p.Send(result)
+			waitFor(func(s string) bool {
+				return strings.Contains(s, "\x1b[2J") && strings.Contains(s, "initial resource")
+			})
+		})
+	}
+}
+
+func TestEscapeRepaintsRestoredScreen(t *testing.T) {
+	for _, screen := range []screen{templatesScreen, jobsScreen, templateScreen, jobScreen, workflowScreen, outputScreen} {
+		t.Run(fmt.Sprintf("screen%d", screen), func(t *testing.T) {
+			m := New(context.Background(), "gateway")
+			parent := "Job Templates"
+			switch screen {
+			case templateScreen:
+				m.screen = templatesScreen
+				m.templatePage.Items = []aap.TemplateSummary{{Name: "parent resource"}}
+				parent = "parent resource"
+			case jobScreen:
+				m.screen = jobsScreen
+				m.jobPage.Items = []aap.JobSummary{{Name: "parent resource"}}
+				parent = "parent resource"
+			case workflowScreen, outputScreen:
+				m.screen = jobScreen
+				m.jobDetail.Name = "parent resource"
+				parent = "parent resource"
+			}
+			m.move(screen)
+			m.templatePage.Items = []aap.TemplateSummary{{Name: "child resource"}}
+			m.jobPage.Items = []aap.JobSummary{{Name: "child resource"}}
+			m.nodePage.Items = []aap.WorkflowNode{{Name: "child resource"}}
+			m.templateDetail.Name = "child resource"
+			m.jobDetail.Name = "child resource"
+			m.outputUpdate.Chunk.Text = "child resource\n"
+			if screen == outputScreen {
+				m.output = &fakeOutput{}
+				m.sessions = append(m.sessions, m.output)
+			}
+			p, waitFor := runTerminal(t, m)
+			waitFor(func(s string) bool { return strings.Contains(s, "child resource") })
+			p.Send(key("esc"))
+			waitFor(func(s string) bool {
+				return strings.Contains(s, "\x1b[2J") && strings.Contains(s, parent) && !strings.Contains(s, "child resource")
+			})
+		})
+	}
 }
 
 func TestSearchResultsRepaintTerminal(t *testing.T) {

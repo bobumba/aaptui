@@ -339,6 +339,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case aap.Page[aap.WorkflowNode]:
 				m.nodePage = v
 				m.selected = 0
+				return m, tea.ClearScreen
 			case aap.OutputUpdate:
 				status := m.outputUpdate.Status
 				complete := m.outputUpdate.Complete
@@ -418,11 +419,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "esc":
 			cleanup := m.closeOutput()
+			previous := m.screen
 			m.back()
-			if cleanup != nil {
-				return m, cleanup
+			if m.screen != previous {
+				// Clear rows from the screen being left before repainting the
+				// restored frame, including when output cleanup is asynchronous.
+				return m, tea.Batch(tea.ClearScreen, cleanup)
 			}
-			return m, nil
+			return m, cleanup
 		case "/":
 			if m.screen == jobsScreen || m.screen == templatesScreen {
 				m.editing = true

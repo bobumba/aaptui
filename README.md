@@ -12,10 +12,10 @@ documentation from assumptions based on pinned upstream AWX source.
 ## Install and run
 
 Requires Go 1.25 or newer and an interactive terminal. Dependencies are pinned to
-Bubble Tea v2.0.3, Lip Gloss v2.0.0, and ANSI layout helpers. Bubbles components
-were not needed for these screens. The renderer dependency is pinned to
-`v0.0.0-20260413211237-bd52878bcec2` to include the upstream fix for unsolicited
-debug-file creation.
+Bubble Tea v2.0.9, Lip Gloss v2.0.0, and ANSI layout helpers. Bubbles components
+were not needed for these screens. Bubble Tea includes the upstream fix that
+ensures clear-screen requests repaint even when the view has already been drawn.
+The renderer dependency includes the fix for unsolicited debug-file creation.
 
 ```bash
 go build -o aaptui ./cmd/aaptui
@@ -97,9 +97,10 @@ full details and messages.
 | Output | arrows or `j`/`k` scroll; PgUp/PgDown page output; left/right or `h`/`l` pan; `f` follows newest output; `r` resumes after a stopped error |
 | Cancellation dialog | `y` or Enter confirms the identified job; `n` or Esc dismisses |
 
-Search consumes ordinary characters, including `q`. Search results redraw the
-list with the footer anchored to the bottom of the terminal. Pending or skipped
-workflow nodes remain visible without opening a nonexistent child. Nested
+Search consumes ordinary characters, including `q`. Search and workflow results
+redraw the list with the footer anchored to the bottom of the terminal. Esc
+repaints the restored screen to clear content from the screen being left. Pending
+or skipped workflow nodes remain visible without opening a nonexistent child. Nested
 workflows retain back-navigation state. Inaccessible and deleted resources display a safe error.
 Unknown job/template types retain common information; unsupported capabilities
 remain explicitly unknown or unavailable. Approval/denial is outside scope.

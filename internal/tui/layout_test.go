@@ -128,6 +128,35 @@ func TestColumnsAlignUnicodeAndCompactRows(t *testing.T) {
 	}
 }
 
+func TestInitialListIndentationMatchesSelectionChanges(t *testing.T) {
+	for _, screen := range []screen{templatesScreen, jobsScreen, workflowScreen} {
+		for _, width := range []int{30, 80} {
+			m := New(context.Background(), "gateway")
+			cleanupModel(t, m)
+			m.screen, m.width = screen, width
+			for i, name := range []string{"first resource", "second resource"} {
+				m.templatePage.Items = append(m.templatePage.Items, aap.TemplateSummary{Ref: aap.TemplateRef{ID: i + 1}, Name: name})
+				m.jobPage.Items = append(m.jobPage.Items, aap.JobSummary{Ref: aap.JobRef{ID: i + 1}, Name: name})
+				m.nodePage.Items = append(m.nodePage.Items, aap.WorkflowNode{Identifier: fmt.Sprint(i + 1), Name: name})
+			}
+			for _, keypress := range []string{"", "j", "k"} {
+				if keypress != "" {
+					m.Update(key(keypress))
+				}
+				lines := assertFrameSize(t, m)
+				header := ansi.Strip(lines[3])
+				nameColumn := strings.Index(header, "NAME")
+				for i, name := range []string{"first resource", "second resource"} {
+					row := ansi.Strip(lines[4+i])
+					if got := strings.Index(row, name); got != nameColumn {
+						t.Fatalf("screen %d width %d after %q: name column = %d, want %d: %q", screen, width, keypress, got, nameColumn, row)
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestLongSearchKeepsCursorVisible(t *testing.T) {
 	for _, width := range []int{30, 80} {
 		m := New(context.Background(), "gateway")
