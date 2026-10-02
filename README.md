@@ -82,9 +82,10 @@ requested resources. Do not share token values when reporting errors.
 | Output | arrows or `j`/`k` scroll; PgUp/PgDown page output; left/right or `h`/`l` pan; `f` follows newest output; `r` resumes after a stopped error |
 | Cancellation dialog | `y` or Enter confirms the identified job; `n` or Esc dismisses |
 
-Search consumes ordinary characters, including `q`. Pending or skipped workflow
-nodes remain visible without opening a nonexistent child. Nested workflows retain
-back-navigation state. Inaccessible and deleted resources display a safe error.
+Search consumes ordinary characters, including `q`. Search results redraw the
+list with the footer anchored to the bottom of the terminal. Pending or skipped
+workflow nodes remain visible without opening a nonexistent child. Nested
+workflows retain back-navigation state. Inaccessible and deleted resources display a safe error.
 Unknown job/template types retain common information; unsupported capabilities
 remain explicitly unknown or unavailable. Approval/denial is outside scope.
 

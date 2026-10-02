@@ -184,6 +184,11 @@ func (m *Model) View() tea.View {
 	if len(content) > available {
 		content = content[:available]
 	}
+	// Keep the footer at the bottom when search results shrink the list.
+	// Every frame covers the viewport, including rows vacated by old results.
+	for len(content) < available {
+		content = append(content, "")
+	}
 	lines := append(content, footer...)
 	if len(lines) > m.height {
 		lines = lines[len(lines)-m.height:]

@@ -324,9 +324,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case aap.Page[aap.TemplateSummary]:
 				m.templatePage = v
 				m.selected = 0
+				// Repaint the replacement list instead of reusing terminal rows
+				// from the previous search or page.
+				return m, tea.ClearScreen
 			case aap.Page[aap.JobSummary]:
 				m.jobPage = v
 				m.selected = 0
+				return m, tea.ClearScreen
 			case aap.JobDetails:
 				m.jobDetail = v
 			case aap.Page[aap.WorkflowNode]:
