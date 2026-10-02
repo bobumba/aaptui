@@ -41,7 +41,11 @@ func TestSearchViewKeepsFooterAtBottom(t *testing.T) {
 							t.Fatalf("line exceeds terminal width: %q", line)
 						}
 					}
-					if got, want := lines[len(lines)-1], ansi.Truncate(footer, size[0], ""); got != want {
+					width := size[0]
+					if width >= 40 {
+						width -= 2
+					}
+					if got, want := strings.TrimSpace(ansi.Strip(lines[len(lines)-1])), ansi.Truncate(footer, width, ""); got != want {
 						t.Fatalf("bottom row = %q, want %q", got, want)
 					}
 				}
@@ -49,9 +53,16 @@ func TestSearchViewKeepsFooterAtBottom(t *testing.T) {
 				check(help)
 				m.Update(key("/"))
 				m.Update(key("demo"))
-				check("Search: demo_ · Enter apply · Esc exit input")
+				inputHelp := "Search: demo_ · Enter apply · Esc exit input"
+				if size[0] < 60 {
+					inputHelp = "Enter apply · Esc exit input"
+				}
+				check(inputHelp)
 				m.Update(key("backspace"))
-				check("Search: dem_ · Enter apply · Esc exit input")
+				if size[0] >= 60 {
+					inputHelp = "Search: dem_ · Enter apply · Esc exit input"
+				}
+				check(inputHelp)
 				_, cmd := m.Update(key("enter"))
 				if cmd == nil || !m.loading {
 					t.Fatal("search did not start a request")

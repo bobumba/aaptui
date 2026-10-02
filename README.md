@@ -71,6 +71,21 @@ requested resources. Do not share token values when reporting errors.
 
 ## Keys
 
+The TUI uses the terminal's default background with a palette adapted to light
+or dark terminals when background detection is available (otherwise it starts
+with the dark palette). Selected rows use reverse video, bold text, and a `>`
+marker. Job statuses retain their text: active is cyan, successful is green,
+failed/error is red, and waiting states are amber. Selection and status labels
+remain usable without color.
+
+Lists align resource fields into columns and prioritize names and job statuses
+on narrow terminals. Details wrap and scroll, search keeps the input cursor
+visible, and messages and cancellation prompts have a distinct panel. Help stays
+at the bottom, with compact hints on narrow terminals. Output text remains plain;
+following shows the newest lines when the terminal shrinks. Extremely small
+terminals show only the hints and content that fit; enlarge the terminal for
+full details and messages.
+
 | Screen | Keys |
 | --- | --- |
 | Everywhere | Ctrl-C quits; `q` quits outside search; Esc returns |

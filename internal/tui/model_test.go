@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func key(s string) tea.KeyPressMsg {
@@ -97,11 +98,13 @@ func TestLongDetailsScrollAndHelp(t *testing.T) {
 	if m.detailTop != 1 {
 		t.Fatal("detail scroll")
 	}
+	sawLastDetail := false
 	for i := 0; i < 60; i++ {
 		m.Update(key("j"))
+		sawLastDetail = sawLastDetail || strings.Contains(ansi.Strip(m.View().Content), "last detail")
 	}
-	view := m.View().Content
-	if !strings.Contains(view, "last detail") || !strings.Contains(view, "Esc back") {
+	view := ansi.Strip(m.View().Content)
+	if !sawLastDetail || !strings.Contains(view, "Children:") || !strings.Contains(view, "Esc back") {
 		t.Fatal("details/help inaccessible", view)
 	}
 }

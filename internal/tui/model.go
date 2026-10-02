@@ -62,6 +62,7 @@ type resultMsg struct {
 	err   error
 }
 type Model struct {
+	styles                     styles
 	detailTop, outputLeft      int
 	canceller                  Canceller
 	confirming                 bool
@@ -97,7 +98,7 @@ type Model struct {
 
 func New(ctx context.Context, connection string) *Model {
 	ctx, cancel := context.WithCancel(ctx)
-	return &Model{ctx: ctx, cancel: cancel, connection: connection, width: 80, height: 24}
+	return &Model{ctx: ctx, cancel: cancel, connection: connection, width: 80, height: 24, styles: newStyles(true)}
 }
 func (m *Model) WithTemplates(reader TemplateReader) *Model { m.templates = reader; return m }
 func (m *Model) loadTemplates(cursor aap.PageCursor) tea.Cmd {
@@ -162,7 +163,7 @@ func (m *Model) readOutput(start int) tea.Cmd {
 		return nil
 	}
 	session := m.output
-	end := start + min(aap.OutputLines, min(aap.OutputLines, max(1, m.height-9)))
+	end := start + m.outputLines()
 	return m.begin(func(ctx context.Context) (any, error) { return session.Read(ctx, start, end) })
 }
 func (m *Model) closeOutput() tea.Cmd {
@@ -189,7 +190,7 @@ func (m *Model) nextOutput() tea.Cmd {
 	}
 	session := m.output
 	id := m.outputID
-	lines := min(aap.OutputLines, min(aap.OutputLines, max(1, m.height-9)))
+	lines := m.outputLines()
 	m.outputPending = true
 	return func() tea.Msg { update, err := session.Next(lines); return liveMsg{id, update, err} }
 }
@@ -200,7 +201,7 @@ type cleanupMsg struct {
 }
 
 func (m *Model) WithCancellation(c Canceller) *Model { m.canceller = c; return m }
-func (m *Model) Init() tea.Cmd                       { return nil }
+func (m *Model) Init() tea.Cmd                       { return tea.RequestBackgroundColor }
 func (m *Model) Close() error {
 	m.cancel()
 	if m.requestCancel != nil {
@@ -265,6 +266,8 @@ func (m *Model) back() {
 }
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		m.styles = newStyles(msg.IsDark())
 	case liveMsg:
 		if msg.id != m.outputID || m.screen != outputScreen || m.quitting {
 			return m, nil
@@ -430,6 +433,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.screen == outputScreen && !m.loading {
+				if m.following {
+					m.outputTop = m.visibleOutputStart()
+				}
 				m.following = false
 				m.outputTop = max(0, m.outputTop-1)
 				return m, m.readOutput(m.outputTop)
@@ -438,7 +444,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f":
 			if m.screen == outputScreen {
 				m.following = true
-				start := max(0, m.outputUpdate.Cursor.Line-min(aap.OutputLines, max(1, m.height-9)))
+				start := max(0, m.outputUpdate.Cursor.Line-m.outputLines())
 				return m, tea.Batch(m.readOutput(start), m.nextOutput())
 			}
 		case "r":
@@ -518,8 +524,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "pgup", "pgdown":
 			if m.screen == outputScreen && !m.loading {
+				if m.following {
+					m.outputTop = m.visibleOutputStart()
+				}
 				m.following = false
-				delta := min(aap.OutputLines, max(1, m.height-9))
+				delta := m.outputLines()
 				if key == "pgup" {
 					delta = -delta
 				}
@@ -532,6 +541,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.screen == outputScreen && !m.loading {
+				if m.following {
+					m.outputTop = m.visibleOutputStart()
+				}
 				m.following = false
 				m.outputTop = min(max(m.outputUpdate.Chunk.AbsoluteEnd-1, 0), m.outputTop+1)
 				return m, m.readOutput(m.outputTop)

@@ -297,3 +297,21 @@ Output limits are documented in README: 256-line/256-KiB chunks and viewports,
 and 1-MiB HTTP bodies. Server download-only output is reported explicitly;
 a download fallback remains unimplemented. Inline system output uses the reviewed
 source's `result_stdout` field and rejects text over the client byte budget.
+
+## Styling follow-up
+
+Implement the approved styling approach in three independently verified steps:
+
+1. Add model-owned Lip Gloss styles and background-aware palettes; retain status
+   labels and selection markers without color.
+2. Share layout measurements between rendering, scrolling, and bounded output
+   requests. Add aligned responsive columns, distinct messages and confirmation,
+   contextual help, and wrapped details while preserving navigation.
+3. Extend regression coverage for Unicode, narrow terminals, selection visibility,
+   search cursors, confirmation identity, output resizing/panning, and renderer
+   redraws. Update the README and run formatting, tests, vet, and race checks.
+
+All three steps are complete. Modified Go files were formatted, and
+`go test ./...`, `go vet ./...`, and `go test -race ./...` passed. The renderer
+redraw regression still passes. Interactive appearance in the user's terminal
+and deployed AAP validation remain unverified.
