@@ -65,7 +65,7 @@ func (c *Client) templateSummary(w wireResource) TemplateSummary {
 	return TemplateSummary{Ref: TemplateRef{w.ID, TemplateType(c.CleanText(w.Type))}, Name: c.cleanLabel(w.Name), Description: c.CleanText(w.Description), Status: c.cleanLabel(w.Status)}
 }
 func (c *Client) ListTemplates(ctx context.Context, o ListOptions) (Page[TemplateSummary], error) {
-	p, err := readPage[wireResource](ctx, c, "unified_job_templates/", o)
+	p, err := readPage[wireResource](ctx, c, "job_templates/", o)
 	if err != nil {
 		return Page[TemplateSummary]{}, err
 	}

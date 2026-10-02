@@ -1,7 +1,7 @@
 # AAP TUI
 
 A keyboard-driven terminal client for Ansible Automation Platform 2.6. Browse
-unified templates and recent jobs, inspect details, navigate workflow children,
+job templates and recent jobs of all types, inspect details, navigate workflow children,
 scroll and follow output, and explicitly confirm supported job cancellation.
 
 **AAP 2.6 compatibility has not been tested against a deployed instance.** The

@@ -29,7 +29,7 @@ func TestOfflineIntegrationBothPrefixes(t *testing.T) {
 				}
 				var response any
 				switch r.URL.Path {
-				case prefix + "unified_job_templates/":
+				case prefix + "job_templates/":
 					response = map[string]any{"count": 1, "results": []any{map[string]any{"id": 3, "type": "job_template", "name": "template"}}}
 				case prefix + "job_templates/3/":
 					response = map[string]any{"id": 3, "type": "job_template", "name": "template", "playbook": "site.yml"}

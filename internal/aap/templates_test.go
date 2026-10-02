@@ -38,28 +38,44 @@ func TestTemplateTypes(t *testing.T) {
 	}
 }
 func TestTemplatePagination(t *testing.T) {
-	calls := 0
-	c, _ := testClient(t, config.Gateway, func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		if r.URL.Query().Get("page") == "2" {
-			if err := json.NewEncoder(w).Encode(map[string]any{"count": 1, "results": []any{}}); err != nil {
-				t.Error(err)
+	for _, mode := range []config.ConnectionMode{config.Gateway, config.Direct} {
+		t.Run(string(mode), func(t *testing.T) {
+			prefix := "/api/controller/v2/"
+			if mode == config.Direct {
+				prefix = "/api/v2/"
 			}
-			return
-		}
-		if r.URL.Query().Get("search") != "abc" || r.URL.Query().Get("page_size") != "5" {
-			t.Error(r.URL)
-		}
-		if err := json.NewEncoder(w).Encode(map[string]any{"count": 1, "results": []any{map[string]any{"id": 1, "type": "job_template", "name": "a"}}, "next": "/api/controller/v2/unified_job_templates/?page=2"}); err != nil {
-			t.Error(err)
-		}
-	})
-	p, err := c.ListTemplates(context.Background(), ListOptions{Search: "abc", PageSize: 5})
-	if err != nil || len(p.Items) != 1 || !p.Next.Present() {
-		t.Fatal(p, err)
-	}
-	p, err = c.ListTemplates(context.Background(), ListOptions{Cursor: p.Next})
-	if err != nil || len(p.Items) != 0 || calls != 2 {
-		t.Fatal(p, err)
+			calls := 0
+			c, _ := testClient(t, mode, func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Path != prefix+"job_templates/" {
+					t.Errorf("list endpoint = %q, want %q", r.URL.Path, prefix+"job_templates/")
+					http.NotFound(w, r)
+					return
+				}
+				if r.URL.Query().Get("page") == "2" {
+					if err := json.NewEncoder(w).Encode(map[string]any{"count": 1, "results": []any{}}); err != nil {
+						t.Error(err)
+					}
+					return
+				}
+				if r.URL.Query().Get("search") != "abc" || r.URL.Query().Get("page_size") != "5" {
+					t.Error(r.URL)
+				}
+				if err := json.NewEncoder(w).Encode(map[string]any{"count": 1, "results": []any{map[string]any{"id": 1, "type": "job_template", "name": "a"}}, "next": prefix + "job_templates/?page=2"}); err != nil {
+					t.Error(err)
+				}
+			})
+			p, err := c.ListTemplates(context.Background(), ListOptions{Search: "abc", PageSize: 5})
+			if err != nil || len(p.Items) != 1 || !p.Next.Present() {
+				t.Fatal(p, err)
+			}
+			if p.Items[0].Ref.Type != PlaybookTemplate || p.Count != 1 {
+				t.Fatal(p)
+			}
+			p, err = c.ListTemplates(context.Background(), ListOptions{Cursor: p.Next})
+			if err != nil || len(p.Items) != 0 || calls != 2 {
+				t.Fatal(p, err)
+			}
+		})
 	}
 }

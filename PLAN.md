@@ -17,10 +17,8 @@ when implementation is requested.
 - Include playbook jobs, workflow jobs, project updates, inventory updates,
   ad hoc commands, system jobs, and workflow approvals where the API exposes
   them. Preserve common details for unknown job types instead of hiding them.
-- Include all template types exposed through `unified_job_templates/`, including
-  workflow templates, projects, inventory sources, and system/approval templates
-  where exposed. Use type-aware details; do not invent templates for job types
-  that have no corresponding template resource.
+- List only job templates through `job_templates/` in the Job Templates menu.
+  Retain type-aware detail readers for other template resources.
 - Support template listing, search/filtering, and details. Launching,
   relaunching, approval/denial, and resource editing remain out of scope.
 - Allow cancellation only for supported active jobs and the current token's
@@ -222,7 +220,7 @@ server cancellation separately and require confirmation identifying the job.
 | 2. Bootstrap/configuration | Module, dependency versions, startup wiring, configuration | Test precedence, explicit false, file discovery, invalid settings, HTTPS restriction, token-only environment handling, and secret-safe errors. |
 | 3. HTTP foundation | Prefixes, authentication, pagination, classified errors, cancellation | Use `httptest` for both modes, deadlines, malformed bodies, unsafe links/redirects, TLS defaults, and token redaction. |
 | 4. Navigation shell | Main/back/quit, resize, loading/error presentation | Drive model updates with fakes; assert navigation, input behavior, stale result handling, and shutdown. |
-| 5. Templates | Unified template listing, type-aware details, server-side search, pagination | Test exposed template types, query parameters, missing optional fields, empty pages, and TUI selection/details. |
+| 5. Templates | Job template listing, type-aware details, server-side search, pagination | Test the job_templates collection in both prefixes, template detail types, query parameters, missing optional fields, empty pages, and TUI selection/details. |
 | 6. Unified jobs | Recent listing, per-type details, capability/status handling | Fixture tests for every required type, unknown types, inaccessible resources, pagination, and permission limitations. |
 | 7. Workflows | Child-node listing and nested navigation | Test pending nodes, approvals, inaccessible children, nested workflows, child output navigation, and back navigation. |
 | 8. Output retrieval/storage | Bounded range retrieval, private cache, scrolling, unavailable output | Test decoding, overlapping/partial ranges, memory/disk limits, older-range reload, output expiry/limits, permissions, cleanup, and storage failures. |
@@ -267,7 +265,7 @@ All eleven milestones are implemented and verified offline:
    redirects, deadlines, and redaction.
 4. Bubble Tea navigation, resize, contextual help, asynchronous requests, stale
    result handling, and local shutdown.
-5. Unified template listing/search/pages and type-aware details.
+5. Job template listing/search/pages and type-aware details.
 6. Unified job listing and details for each required and unknown type; capabilities
    distinguish available, unavailable, and unknown.
 7. Workflow node pages, pending/skipped nodes, approvals, inaccessible children,
