@@ -65,14 +65,23 @@ func (c *Client) templateSummary(w wireResource) TemplateSummary {
 	return TemplateSummary{Ref: TemplateRef{w.ID, TemplateType(c.CleanText(w.Type))}, Name: c.cleanLabel(w.Name), Description: c.CleanText(w.Description), Status: c.cleanLabel(w.Status)}
 }
 func (c *Client) ListTemplates(ctx context.Context, o ListOptions) (Page[TemplateSummary], error) {
-	p, err := readPage[wireResource](ctx, c, "job_templates/", o)
+	return c.listTemplates(ctx, "job_templates/", "list templates", o)
+}
+
+// ListProjects lists project resources using the same summaries as template details.
+func (c *Client) ListProjects(ctx context.Context, o ListOptions) (Page[TemplateSummary], error) {
+	return c.listTemplates(ctx, "projects/", "list projects", o)
+}
+
+func (c *Client) listTemplates(ctx context.Context, route, operation string, o ListOptions) (Page[TemplateSummary], error) {
+	p, err := readPage[wireResource](ctx, c, route, o)
 	if err != nil {
 		return Page[TemplateSummary]{}, err
 	}
 	out := Page[TemplateSummary]{Count: p.Count, Next: p.Next, Previous: p.Previous}
 	for _, w := range p.Items {
-		if w.ID <= 0 || !validType(w.Type) {
-			return Page[TemplateSummary]{}, apiError(Malformed, "list templates")
+		if w.ID <= 0 || !validType(w.Type) || (route == "projects/" && w.Type != string(ProjectTemplate)) {
+			return Page[TemplateSummary]{}, apiError(Malformed, operation)
 		}
 		out.Items = append(out.Items, c.templateSummary(w))
 	}

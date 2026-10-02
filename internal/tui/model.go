@@ -23,6 +23,7 @@ const (
 	jobScreen
 	workflowScreen
 	outputScreen
+	projectsScreen
 )
 
 type Canceller interface {
@@ -43,6 +44,10 @@ type JobReader interface {
 }
 type TemplateReader interface {
 	ListTemplates(context.Context, aap.ListOptions) (aap.Page[aap.TemplateSummary], error)
+	Template(context.Context, aap.TemplateRef) (aap.TemplateDetails, error)
+}
+type ProjectReader interface {
+	ListProjects(context.Context, aap.ListOptions) (aap.Page[aap.TemplateSummary], error)
 	Template(context.Context, aap.TemplateRef) (aap.TemplateDetails, error)
 }
 type frame struct {
@@ -81,6 +86,7 @@ type Model struct {
 	jobPage                    aap.Page[aap.JobSummary]
 	jobDetail                  aap.JobDetails
 	templates                  TemplateReader
+	projects                   ProjectReader
 	templatePage               aap.Page[aap.TemplateSummary]
 	templateDetail             aap.TemplateDetails
 	ctx                        context.Context
@@ -101,6 +107,16 @@ func New(ctx context.Context, connection string) *Model {
 	return &Model{ctx: ctx, cancel: cancel, connection: connection, width: 80, height: 24, styles: newStyles(true)}
 }
 func (m *Model) WithTemplates(reader TemplateReader) *Model { m.templates = reader; return m }
+func (m *Model) WithProjects(reader ProjectReader) *Model   { m.projects = reader; return m }
+func (m *Model) loadProjects(cursor aap.PageCursor) tea.Cmd {
+	if m.projects == nil {
+		return nil
+	}
+	search := m.search
+	return m.begin(func(ctx context.Context) (any, error) {
+		return m.projects.ListProjects(ctx, aap.ListOptions{Search: search, Cursor: cursor})
+	})
+}
 func (m *Model) loadTemplates(cursor aap.PageCursor) tea.Cmd {
 	if m.templates == nil {
 		return nil
@@ -391,6 +407,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.screen == jobsScreen {
 					return m, m.loadJobs(aap.PageCursor{})
 				}
+				if m.screen == projectsScreen {
+					return m, m.loadProjects(aap.PageCursor{})
+				}
 			case "backspace":
 				r := []rune(m.search)
 				if len(r) > 0 {
@@ -428,7 +447,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, cleanup
 		case "/":
-			if m.screen == jobsScreen || m.screen == templatesScreen {
+			if m.screen == jobsScreen || m.screen == templatesScreen || m.screen == projectsScreen {
 				m.editing = true
 			}
 		case "up", "k":
@@ -457,6 +476,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.screen == templatesScreen {
 				return m, m.loadTemplates(aap.PageCursor{})
+			}
+			if m.screen == projectsScreen {
+				return m, m.loadProjects(aap.PageCursor{})
 			}
 			if m.screen == jobsScreen {
 				return m, m.loadJobs(aap.PageCursor{})
@@ -499,6 +521,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.loadNodes(aap.PageCursor{})
 			}
 		case "n":
+			if m.screen == projectsScreen && m.templatePage.Next.Present() {
+				return m, m.loadProjects(m.templatePage.Next)
+			}
 			if m.screen == templatesScreen && m.templatePage.Next.Present() {
 				return m, m.loadTemplates(m.templatePage.Next)
 			}
@@ -509,6 +534,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.loadNodes(m.nodePage.Next)
 			}
 		case "p":
+			if m.screen == projectsScreen && m.templatePage.Previous.Present() {
+				return m, m.loadProjects(m.templatePage.Previous)
+			}
 			if m.screen == templatesScreen && m.templatePage.Previous.Present() {
 				return m, m.loadTemplates(m.templatePage.Previous)
 			}
@@ -553,8 +581,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.readOutput(m.outputTop)
 			}
 			if m.screen == mainScreen {
-				m.selected = min(1, m.selected+1)
-			} else if m.screen == templatesScreen {
+				m.selected = min(2, m.selected+1)
+			} else if m.screen == templatesScreen || m.screen == projectsScreen {
 				m.selected = min(max(len(m.templatePage.Items)-1, 0), m.selected+1)
 			}
 			if m.screen == jobsScreen {
@@ -565,13 +593,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			if m.screen == mainScreen {
-				if m.selected == 0 {
+				switch m.selected {
+				case 0:
 					m.move(templatesScreen)
+					m.templatePage = aap.Page[aap.TemplateSummary]{}
 					return m, m.loadTemplates(aap.PageCursor{})
-				} else {
+				case 1:
 					m.move(jobsScreen)
 					return m, m.loadJobs(aap.PageCursor{})
+				case 2:
+					m.move(projectsScreen)
+					m.templatePage = aap.Page[aap.TemplateSummary]{}
+					return m, m.loadProjects(aap.PageCursor{})
 				}
+			} else if m.screen == projectsScreen && !m.loading && m.projects != nil && m.selected < len(m.templatePage.Items) {
+				summary := m.templatePage.Items[m.selected]
+				ref := summary.Ref
+				m.move(templateScreen)
+				m.templateDetail = aap.TemplateDetails{TemplateSummary: summary}
+				return m, m.begin(func(ctx context.Context) (any, error) { return m.projects.Template(ctx, ref) })
 			} else if m.screen == templatesScreen && !m.loading && m.templates != nil && m.selected < len(m.templatePage.Items) {
 				summary := m.templatePage.Items[m.selected]
 				ref := summary.Ref

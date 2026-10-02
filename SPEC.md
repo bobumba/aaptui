@@ -50,6 +50,14 @@ Users can:
 Launching or relaunching jobs is deferred and is not part of the
 initial implementation.
 
+### Projects
+
+Users can:
+
+- List projects through the projects API endpoint
+- Search/filter projects and navigate pages
+- View project details, including status and SCM settings
+
 ### Jobs
 
 Users can:
@@ -89,7 +97,8 @@ Initial screens:
 
 Main
 ├── Job Templates
-└── Jobs
+├── Jobs
+└── Projects
 
 The user must be able to return to the previous screen
 and quit the application using consistent key bindings.

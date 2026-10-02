@@ -60,14 +60,17 @@ func (m *Model) outputLines() int {
 }
 
 func (m *Model) header(width int) []string {
-	title := []string{"Main", "Job Templates", "Jobs", "Template details", "Job details", "Workflow children", "Output"}[m.screen]
+	title := []string{"Main", "Job Templates", "Jobs", "Template details", "Job details", "Workflow children", "Output", "Projects"}[m.screen]
+	if m.screen == templateScreen && m.templateDetail.Ref.Type == aap.ProjectTemplate {
+		title = "Project details"
+	}
 	title = m.styles.title.Render("AAP TUI · " + title)
 	if m.loading {
 		title += m.styles.warning.Render(" · Loading…")
 	}
 	lines := []string{title, m.styles.muted.Render(m.connection), m.styles.muted.Render(strings.Repeat("─", width))}
 	switch m.screen {
-	case templatesScreen, jobsScreen, workflowScreen:
+	case templatesScreen, projectsScreen, jobsScreen, workflowScreen:
 		lines = append(lines, m.columnHeader(width))
 	case outputScreen:
 		lines = append(lines, m.styles.muted.Render(fmt.Sprintf("Job %d · lines %d–%d of %d", m.jobDetail.Ref.ID, m.outputUpdate.Chunk.Start, m.outputUpdate.Chunk.End, m.outputUpdate.Chunk.AbsoluteEnd)))
@@ -182,7 +185,7 @@ func (m *Model) screenHelp(width int) []string {
 	switch m.screen {
 	case mainScreen:
 		lines = []string{"↑/↓ select · Enter open · q quit · Ctrl-C quit"}
-	case templatesScreen, jobsScreen:
+	case templatesScreen, projectsScreen, jobsScreen:
 		lines = []string{"↑/↓ select · Enter open · / search · r refresh · n/p page", back}
 	case templateScreen:
 		lines = []string{"↑/↓ scroll · Esc back · q quit · Ctrl-C quit"}
@@ -197,7 +200,7 @@ func (m *Model) screenHelp(width int) []string {
 		switch m.screen {
 		case mainScreen:
 			lines = []string{"↑/↓ select · Enter open", "q quit · Ctrl-C quit"}
-		case templatesScreen, jobsScreen:
+		case templatesScreen, projectsScreen, jobsScreen:
 			lines = []string{"↑/↓ select · Enter open", "/ search · r refresh · n/p page", back}
 		case templateScreen:
 			lines = []string{"↑/↓ scroll", back}

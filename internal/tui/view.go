@@ -38,17 +38,21 @@ func (m *Model) body(width, height int) []string {
 	start := max(0, m.selected-rows+1)
 	switch m.screen {
 	case mainScreen:
-		labels := []string{"Job Templates", "Jobs"}
+		labels := []string{"Job Templates", "Jobs", "Projects"}
 		for i := start; i < min(len(labels), start+rows); i++ {
 			lines = append(lines, m.selectRow(labels[i], i == m.selected, width))
 		}
-	case templatesScreen:
+	case templatesScreen, projectsScreen:
 		for i := start; i < min(len(m.templatePage.Items), start+rows); i++ {
 			v := m.templatePage.Items[i]
-			lines = append(lines, m.resourceRow(strconv.Itoa(v.Ref.ID), v.Name, string(v.Ref.Type), "", i == m.selected, width))
+			lines = append(lines, m.resourceRow(strconv.Itoa(v.Ref.ID), v.Name, string(v.Ref.Type), v.Status, i == m.selected, width))
 		}
 		if len(m.templatePage.Items) == 0 {
-			lines = []string{m.emptyState("templates")}
+			resource := "templates"
+			if m.screen == projectsScreen {
+				resource = "projects"
+			}
+			lines = []string{m.emptyState(resource)}
 		}
 	case jobsScreen:
 		for i := start; i < min(len(m.jobPage.Items), start+rows); i++ {
@@ -122,7 +126,7 @@ func (m *Model) columns(width int) columns {
 		c.kind = 22
 		c.name -= c.kind + 1
 	}
-	if m.screen == jobsScreen || m.screen == workflowScreen {
+	if m.screen == jobsScreen || m.screen == workflowScreen || m.screen == projectsScreen {
 		if width >= 20 {
 			c.status = 10
 			c.name -= c.status + 1

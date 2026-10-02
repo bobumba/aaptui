@@ -15,10 +15,10 @@ import (
 )
 
 func TestSearchViewKeepsFooterAtBottom(t *testing.T) {
-	for _, screen := range []screen{templatesScreen, jobsScreen} {
+	for _, screen := range []screen{templatesScreen, projectsScreen, jobsScreen} {
 		for _, size := range [][2]int{{80, 24}, {30, 10}, {1, 1}} {
 			t.Run(fmt.Sprintf("screen%d/%dx%d", screen, size[0], size[1]), func(t *testing.T) {
-				m := New(context.Background(), "gateway").WithTemplates(&fakeTemplates{}).WithJobs(&fakeJobs{})
+				m := New(context.Background(), "gateway").WithTemplates(&fakeTemplates{}).WithProjects(&fakeProjects{}).WithJobs(&fakeJobs{})
 				defer m.Close()
 				m.screen = screen
 				m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
@@ -137,13 +137,13 @@ func runTerminal(t *testing.T, m *Model) (*tea.Program, func(func(string) bool))
 }
 
 func TestListResultsRepaintUnchangedView(t *testing.T) {
-	for _, screen := range []screen{templatesScreen, jobsScreen, workflowScreen} {
+	for _, screen := range []screen{templatesScreen, projectsScreen, jobsScreen, workflowScreen} {
 		t.Run(fmt.Sprintf("screen%d", screen), func(t *testing.T) {
 			m := New(context.Background(), "gateway")
 			m.screen = screen
 			result := resultMsg{}
 			switch screen {
-			case templatesScreen:
+			case templatesScreen, projectsScreen:
 				m.templatePage.Items = []aap.TemplateSummary{{Name: "initial resource"}}
 				result.value = m.templatePage
 			case jobsScreen:
@@ -167,7 +167,7 @@ func TestListResultsRepaintUnchangedView(t *testing.T) {
 }
 
 func TestEscapeRepaintsRestoredScreen(t *testing.T) {
-	for _, screen := range []screen{templatesScreen, jobsScreen, templateScreen, jobScreen, workflowScreen, outputScreen} {
+	for _, screen := range []screen{templatesScreen, projectsScreen, jobsScreen, templateScreen, jobScreen, workflowScreen, outputScreen} {
 		t.Run(fmt.Sprintf("screen%d", screen), func(t *testing.T) {
 			m := New(context.Background(), "gateway")
 			parent := "Job Templates"
@@ -207,10 +207,10 @@ func TestEscapeRepaintsRestoredScreen(t *testing.T) {
 }
 
 func TestSearchResultsRepaintTerminal(t *testing.T) {
-	for _, screen := range []screen{templatesScreen, jobsScreen} {
+	for _, screen := range []screen{templatesScreen, projectsScreen, jobsScreen} {
 		t.Run(fmt.Sprintf("screen%d", screen), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			m := New(ctx, "gateway").WithTemplates(&fakeTemplates{}).WithJobs(&fakeJobs{})
+			m := New(ctx, "gateway").WithTemplates(&fakeTemplates{}).WithProjects(&fakeProjects{}).WithJobs(&fakeJobs{})
 			m.screen = screen
 			m.templatePage.Items = []aap.TemplateSummary{{Name: "original result"}}
 			m.jobPage.Items = []aap.JobSummary{{Name: "original result"}}

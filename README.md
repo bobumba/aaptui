@@ -1,8 +1,13 @@
 # AAP TUI
 
 A keyboard-driven terminal client for Ansible Automation Platform 2.6. Browse
-job templates and recent jobs of all types, inspect details, navigate workflow children,
-scroll and follow output, and explicitly confirm supported job cancellation.
+job templates, projects, and recent jobs of all types, inspect details, navigate
+workflow children, scroll and follow output, and explicitly confirm supported
+job cancellation.
+
+The main menu contains Job Templates, Jobs, and Projects. Projects lists the
+`projects/` API collection and shows status, description, and SCM type, URL, and
+branch in its detail view.
 
 **AAP 2.6 compatibility has not been tested against a deployed instance.** The
 implementation is verified offline with synthetic HTTPS servers and fixtures.
@@ -58,8 +63,8 @@ scope. Authenticated redirects and foreign API links are rejected.
 ### Authentication troubleshooting
 
 `read page: authentication` means the server returned HTTP 401, so the list could
-not be loaded. It does not mean there are no jobs or templates. Check that
-`AAP_TOKEN` contains the raw access token (without a `Bearer ` prefix, surrounding
+not be loaded. It does not mean there are no jobs, templates, or projects. Check
+that `AAP_TOKEN` contains the raw access token (without a `Bearer ` prefix, surrounding
 quotes, or spaces), and that it has not expired or been revoked.
 
 For AAP 2.6, use a platform gateway OAuth 2 token with the gateway origin in
@@ -92,8 +97,8 @@ full details and messages.
 | --- | --- |
 | Everywhere | Ctrl-C quits; `q` quits outside search; Esc returns |
 | Main/lists | arrows or `j`/`k` select; Enter opens |
-| Template/job lists | `/` enters search; Enter applies server-side search; Esc exits input; `n`/`p` next/previous page; `r` refreshes |
-| Template details | arrows or `j`/`k` scroll wrapped details; Esc returns |
+| Template/project/job lists | `/` enters search; Enter applies server-side search; Esc exits input; `n`/`p` next/previous page; `r` refreshes |
+| Template/project details | arrows or `j`/`k` scroll wrapped details; Esc returns |
 | Job details | `o` output; `w` workflow children; `c` cancellation dialog; `r` refresh; arrows or `j`/`k` scroll |
 | Workflow children | Enter opens a launched child; `n`/`p` page; `r` refresh |
 | Output | arrows or `j`/`k` scroll; PgUp/PgDown page output; left/right or `h`/`l` pan; `f` follows newest output; `r` resumes after a stopped error |

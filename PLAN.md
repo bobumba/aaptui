@@ -18,7 +18,9 @@ when implementation is requested.
   ad hoc commands, system jobs, and workflow approvals where the API exposes
   them. Preserve common details for unknown job types instead of hiding them.
 - List only job templates through `job_templates/` in the Job Templates menu.
-  Retain type-aware detail readers for other template resources.
+  List projects through `projects/` in the Projects menu, reusing the existing
+  project summary and detail types. Retain type-aware detail readers for other
+  template resources.
 - Support template listing, search/filtering, and details. Launching,
   relaunching, approval/denial, and resource editing remain out of scope.
 - Allow cancellation only for supported active jobs and the current token's
@@ -206,8 +208,8 @@ unavailable-output state while remaining viewable.
 
 ## Navigation
 
-Main contains Job Templates and Jobs. Use Enter to open, Esc to return, `q` to
-quit outside text entry, and Ctrl-C to quit consistently. Search input consumes
+Main contains Job Templates, Jobs, and Projects. Use Enter to open, Esc to return,
+`q` to quit outside text entry, and Ctrl-C to quit consistently. Search input consumes
 ordinary characters; Esc first exits input mode. Provide visible contextual help,
 manual refresh where useful, page navigation, and output follow controls. Bind
 server cancellation separately and require confirmation identifying the job.

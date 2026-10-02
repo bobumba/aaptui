@@ -21,7 +21,8 @@ Upstream behavior below is an assumption for AAP 2.6, not product evidence.
 
 Prepend `/api/controller/v2/` (gateway) or `/api/v2/` (direct) to each route.
 The Job Templates menu lists only `job_templates/`; the Jobs menu lists all job
-types through `unified_jobs/`. Both collections use
+types through `unified_jobs/`; the Projects menu lists `projects/` and reads
+details from `projects/{id}/`. These collections use
 `count`, `next`, `previous`, `results`; query `search`, `page_size`, `order_by`.
 No supplement is justified by reviewed evidence: upstream polymorphic serializers
 include approvals even though their advertised type lists omit them.

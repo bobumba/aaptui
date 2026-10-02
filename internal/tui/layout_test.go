@@ -32,7 +32,7 @@ func assertFrameSize(t *testing.T, m *Model) []string {
 }
 
 func TestStyledFramesFitTerminal(t *testing.T) {
-	for screen := mainScreen; screen <= outputScreen; screen++ {
+	for screen := mainScreen; screen <= projectsScreen; screen++ {
 		for _, size := range [][2]int{{1, 1}, {2, 2}, {19, 6}, {30, 10}, {40, 12}, {80, 24}} {
 			for _, state := range []string{"normal", "loading", "error", "search", "confirmation"} {
 				t.Run(fmt.Sprintf("%d/%dx%d/%s", screen, size[0], size[1], state), func(t *testing.T) {
@@ -68,7 +68,7 @@ func TestStyledFramesFitTerminal(t *testing.T) {
 }
 
 func TestSelectionVisibleWithMessages(t *testing.T) {
-	for _, screen := range []screen{templatesScreen, jobsScreen, workflowScreen} {
+	for _, screen := range []screen{templatesScreen, projectsScreen, jobsScreen, workflowScreen} {
 		for _, width := range []int{30, 80} {
 			m := New(context.Background(), "gateway")
 			m.screen, m.width, m.height = screen, width, 10
@@ -129,7 +129,7 @@ func TestColumnsAlignUnicodeAndCompactRows(t *testing.T) {
 }
 
 func TestInitialListIndentationMatchesSelectionChanges(t *testing.T) {
-	for _, screen := range []screen{templatesScreen, jobsScreen, workflowScreen} {
+	for _, screen := range []screen{templatesScreen, projectsScreen, jobsScreen, workflowScreen} {
 		for _, width := range []int{30, 80} {
 			m := New(context.Background(), "gateway")
 			cleanupModel(t, m)
