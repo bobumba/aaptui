@@ -53,6 +53,22 @@ credentials, queries, or fragments. System certificate trust is used. Setting
 HTTP, custom CA bundles, client certificates, and proxy path prefixes are outside
 scope. Authenticated redirects and foreign API links are rejected.
 
+### Authentication troubleshooting
+
+`read page: authentication` means the server returned HTTP 401, so the list could
+not be loaded. It does not mean there are no jobs or templates. Check that
+`AAP_TOKEN` contains the raw access token (without a `Bearer ` prefix, surrounding
+quotes, or spaces), and that it has not expired or been revoked.
+
+For AAP 2.6, use a platform gateway OAuth 2 token with the gateway origin in
+`AAP_URL` and `AAP_CONNECTION_MODE=gateway`. Red Hat documents
+[gateway token authentication](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/develop-con_api_auth_methods)
+and the [move of token authentication to gateway](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/upgrade-assembly_upgrade_api_changes).
+Use `direct` only with a controller origin and a token that deployment accepts.
+Restart aaptui after changing environment settings; they are loaded at startup.
+HTTP 403 is a separate permission failure: check the token owner's access to the
+requested resources. Do not share token values when reporting errors.
+
 ## Keys
 
 | Screen | Keys |

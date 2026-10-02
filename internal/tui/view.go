@@ -4,6 +4,7 @@ import (
 	"aaptui/internal/aap"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"errors"
 	"fmt"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
@@ -24,7 +25,14 @@ func (m *Model) View() tea.View {
 		}
 	} else if m.screen == templatesScreen {
 		if len(m.templatePage.Items) == 0 {
-			b.WriteString("No templates.\n")
+			switch {
+			case m.loading:
+				b.WriteString("Loading templates…\n")
+			case m.err != nil:
+				b.WriteString("Unable to load templates.\n")
+			default:
+				b.WriteString("No templates.\n")
+			}
 		}
 		start := max(0, m.selected-min(aap.OutputLines, max(1, m.height-9))+1)
 		for i := start; i < min(len(m.templatePage.Items), start+min(aap.OutputLines, max(1, m.height-9))); i++ {
@@ -55,7 +63,14 @@ func (m *Model) View() tea.View {
 		}
 	} else if m.screen == jobsScreen {
 		if len(m.jobPage.Items) == 0 {
-			b.WriteString("No jobs.\n")
+			switch {
+			case m.loading:
+				b.WriteString("Loading jobs…\n")
+			case m.err != nil:
+				b.WriteString("Unable to load jobs.\n")
+			default:
+				b.WriteString("No jobs.\n")
+			}
 		}
 		start := max(0, m.selected-min(aap.OutputLines, max(1, m.height-9))+1)
 		for i := start; i < min(len(m.jobPage.Items), start+min(aap.OutputLines, max(1, m.height-9))); i++ {
@@ -149,7 +164,15 @@ func (m *Model) View() tea.View {
 		footer = append([]string{"Loading…"}, footer...)
 	}
 	if m.err != nil {
-		footer = append([]string{m.err.Error()}, footer...)
+		messages := []string{m.err.Error()}
+		var apiErr *aap.APIError
+		if errors.As(m.err, &apiErr) && apiErr.Kind == aap.Authentication {
+			messages = append(messages,
+				"HTTP 401: server rejected the token. Check AAP_TOKEN.",
+				"Check AAP_URL and AAP_CONNECTION_MODE match the token's server.",
+				"After changing environment settings, restart aaptui.")
+		}
+		footer = append(messages, footer...)
 	}
 	available := max(0, m.height-len(footer))
 	if (m.screen == jobScreen || m.screen == templateScreen) && len(content) >= 3 && available > 3 {

@@ -17,7 +17,11 @@ import (
 	"aaptui/internal/tui"
 )
 
-func run(args []string) (resultErr error) {
+func run() error {
+	return runWithArgs(os.Args[1:])
+}
+
+func runWithArgs(args []string) (resultErr error) {
 	flags := flag.NewFlagSet("aaptui", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	path := flags.String("config", "", "configuration file")
@@ -54,7 +58,7 @@ func run(args []string) (resultErr error) {
 	return nil
 }
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

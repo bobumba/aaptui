@@ -9,7 +9,7 @@ import (
 
 func TestRejectSecretArguments(t *testing.T) {
 	for _, args := range [][]string{{"--token", "secret"}, {"--secret"}, {"secret"}} {
-		err := run(args)
+		err := runWithArgs(args)
 		if err == nil || strings.Contains(err.Error(), "secret") {
 			t.Fatal("unsafe argument error", err)
 		}
