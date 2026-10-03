@@ -1,7 +1,6 @@
 # AAP TUI Implementation Plan
 
-Status: all eleven milestones implemented and verified offline. See the
-implementation record below and `docs/API_CONTRACT.md` for verification limits.
+Status: inventory navigation milestones planned; implementation has not started.
 
 This plan refines `SPEC.md` and follows `AGENTS.md`. No application code is
 authorized by the design discussion alone. Implement one milestone at a time
@@ -216,19 +215,13 @@ server cancellation separately and require confirmation identifying the job.
 
 ## Milestones and acceptance tests
 
+The following milestones are planning only. Do not execute them until
+implementation is requested.
+
 | Milestone | Deliverable | Independently testable acceptance criteria |
 | --- | --- | --- |
-| 1. Offline API contract review | Document resource/type/capability matrix, endpoint assumptions, output semantics, and fixture provenance | Map every required job type in both prefixes; classify approvals, workflow nodes, stdout limits, and final-output evidence. Mark facts unsupported by AAP 2.6 evidence as assumptions. |
-| 2. Bootstrap/configuration | Module, dependency versions, startup wiring, configuration | Test precedence, explicit false, file discovery, invalid settings, HTTPS restriction, token-only environment handling, and secret-safe errors. |
-| 3. HTTP foundation | Prefixes, authentication, pagination, classified errors, cancellation | Use `httptest` for both modes, deadlines, malformed bodies, unsafe links/redirects, TLS defaults, and token redaction. |
-| 4. Navigation shell | Main/back/quit, resize, loading/error presentation | Drive model updates with fakes; assert navigation, input behavior, stale result handling, and shutdown. |
-| 5. Templates | Job template listing, type-aware details, server-side search, pagination | Test the job_templates collection in both prefixes, template detail types, query parameters, missing optional fields, empty pages, and TUI selection/details. |
-| 6. Unified jobs | Recent listing, per-type details, capability/status handling | Fixture tests for every required type, unknown types, inaccessible resources, pagination, and permission limitations. |
-| 7. Workflows | Child-node listing and nested navigation | Test pending nodes, approvals, inaccessible children, nested workflows, child output navigation, and back navigation. |
-| 8. Output retrieval/storage | Bounded range retrieval, private cache, scrolling, unavailable output | Test decoding, overlapping/partial ranges, memory/disk limits, older-range reload, output expiry/limits, permissions, cleanup, and storage failures. |
-| 9. Live following | Polling, retry/resume, deduplication, completion catch-up, lifecycle | Simulate disconnect/reconnect, rate limits, delayed final output, resets, scrolling while collecting, screen changes, and quit. Run race checks. |
-| 10. Cancellation | Capability check, explicit confirmation, mutation/status reconciliation | Test unsupported/denied cancellation, changing state, ambiguous responses, confirmation dismissal, and no mutation on exit. |
-| 11. Release documentation/checks | README, example non-secret config, offline integration scenarios | Exercise both prefixes with fake servers; document installation, keys, output caching, limitations, and deferred features. |
+| 1. Inventories main menu | Add Inventories as a main menu option and list inventories for selection | Verify the main menu includes Inventories, opening it lists inventories, and back navigation returns to the main menu. |
+| 2. Inventory groups and hosts | Selecting an inventory opens a submenu with Groups and Hosts | Verify Hosts lists all hosts in the selected inventory, including hosts across pages. Verify Groups displays the inventory's groups and allows traversal through groups to display hosts. Verify back navigation preserves the selected inventory and traversal context. |
 
 For each implementation milestone: format changed Go files with `gofmt -w`, run
 `go test ./...` and `go vet ./...`, review changes for unintended scope, and update
@@ -252,66 +245,5 @@ for the agreed offline implementation.
 - [Upstream AWX output API documentation](https://github.com/ansible/awx/blob/devel/awx/api/templates/api/unified_job_stdout.md)
 - [Upstream AWX API implementation](https://github.com/ansible/awx/blob/devel/awx/api/views/__init__.py)
 
-The upstream links are starting points for milestone 1; record the exact reviewed
-revision there before deriving fixtures or relying on its behavior.
-
-## Implementation record
-
-All eleven milestones are implemented and verified offline:
-
-1. Contract matrix, output semantics, and pinned source provenance:
-   `docs/API_CONTRACT.md`.
-2. Go module, pinned dependencies, environment-only token, strict configuration,
-   and startup wiring.
-3. HTTPS client, both prefixes, bounded pagination, classified errors, safe links,
-   redirects, deadlines, and redaction.
-4. Bubble Tea navigation, resize, contextual help, asynchronous requests, stale
-   result handling, and local shutdown.
-5. Job template listing/search/pages and type-aware details.
-6. Unified job listing and details for each required and unknown type; capabilities
-   distinguish available, unavailable, and unknown.
-7. Workflow node pages, pending/skipped nodes, approvals, inaccessible children,
-   nested child navigation, and preserved back-stack state.
-8. Bounded line ranges and inline system output, private indexed cache, eviction,
-   older-history reload, scrolling/panning, and explicit storage/cleanup errors.
-9. Two-second polling, capped retries/rate limits, overlapping partial lines,
-   delayed final-output catch-up, unknown-completion presentation, and lifecycle.
-10. Explicit cancellation confirmation, fresh permission/state checks, one POST,
-    and status reconciliation without mutation retries.
-11. README, non-secret example configuration, synthetic integration scenarios for
-    both prefixes, startup/quit checks, and dependency side-effect regression.
-
-For each milestone, changed Go files were formatted and `go test ./...` and
-`go vet ./...` executed successfully before proceeding. Output/lifecycle work and
-release checks additionally passed `go test -race ./...`. The release executable
-was built successfully. No deployed AAP instance was used. Full interactive
-terminal testing and actual AAP 2.6 compatibility remain unverified.
-
-Release review pinned the minimal upstream Ultraviolet fix
-`v0.0.0-20260413211237-bd52878bcec2` because the original transitive revision
-created an unsolicited debug file at package initialization. Bubble Tea and Lip
-Gloss remain on the compatible stable versions selected at bootstrap.
-
-Output limits are documented in README: 256-line/256-KiB chunks and viewports,
-256-KiB accounted hot text, 16-MiB disk cache, 256 cache files, 65,536 indexed lines,
-and 1-MiB HTTP bodies. Server download-only output is reported explicitly;
-a download fallback remains unimplemented. Inline system output uses the reviewed
-source's `result_stdout` field and rejects text over the client byte budget.
-
-## Styling follow-up
-
-Implement the approved styling approach in three independently verified steps:
-
-1. Add model-owned Lip Gloss styles and background-aware palettes; retain status
-   labels and selection markers without color.
-2. Share layout measurements between rendering, scrolling, and bounded output
-   requests. Add aligned responsive columns, distinct messages and confirmation,
-   contextual help, and wrapped details while preserving navigation.
-3. Extend regression coverage for Unicode, narrow terminals, selection visibility,
-   search cursors, confirmation identity, output resizing/panning, and renderer
-   redraws. Update the README and run formatting, tests, vet, and race checks.
-
-All three steps are complete. Modified Go files were formatted, and
-`go test ./...`, `go vet ./...`, and `go test -race ./...` passed. The renderer
-redraw regression still passes. Interactive appearance in the user's terminal
-and deployed AAP validation remain unverified.
+For future API work, record the exact reviewed upstream revision in
+`docs/API_CONTRACT.md` before deriving fixtures or relying on its behavior.
