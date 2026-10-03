@@ -58,6 +58,14 @@ Users can:
 - Search/filter projects and navigate pages
 - View project details, including status and SCM settings
 
+### Inventories
+
+Users can list and search inventories, navigate pages, and select inventories.
+Selecting an inventory opens Groups and Hosts. Hosts lists all visible inventory
+hosts across pages. Groups lists the inventory's groups; selecting a group opens
+Child groups and Hosts, allowing nested traversal. Group Hosts includes hosts in
+descendant groups. Esc restores the previous selection, page, and traversal context.
+
 ### Jobs
 
 Users can:
@@ -98,7 +106,11 @@ Initial screens:
 Main
 ├── Job Templates
 ├── Jobs
-└── Projects
+├── Projects
+└── Inventories
+    └── Selected inventory
+        ├── Groups → Selected group → Child groups / Hosts
+        └── Hosts
 
 The user must be able to return to the previous screen
 and quit the application using consistent key bindings.

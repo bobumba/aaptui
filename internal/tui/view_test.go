@@ -137,7 +137,7 @@ func runTerminal(t *testing.T, m *Model) (*tea.Program, func(func(string) bool))
 }
 
 func TestListResultsRepaintUnchangedView(t *testing.T) {
-	for _, screen := range []screen{templatesScreen, projectsScreen, jobsScreen, workflowScreen} {
+	for _, screen := range []screen{templatesScreen, projectsScreen, jobsScreen, workflowScreen, inventoriesScreen, groupsScreen, hostsScreen} {
 		t.Run(fmt.Sprintf("screen%d", screen), func(t *testing.T) {
 			m := New(context.Background(), "gateway")
 			m.screen = screen
@@ -152,6 +152,15 @@ func TestListResultsRepaintUnchangedView(t *testing.T) {
 			case workflowScreen:
 				m.nodePage.Items = []aap.WorkflowNode{{Name: "initial resource"}}
 				result.value = m.nodePage
+			case inventoriesScreen:
+				m.inventoryPage.Items = []aap.InventorySummary{{Name: "initial resource"}}
+				result.value = m.inventoryPage
+			case groupsScreen:
+				m.groupPage.Items = []aap.GroupSummary{{Name: "initial resource"}}
+				result.value = m.groupPage
+			case hostsScreen:
+				m.hostPage.Items = []aap.HostSummary{{Name: "initial resource"}}
+				result.value = m.hostPage
 			}
 			p, waitFor := runTerminal(t, m)
 			waitFor(func(s string) bool { return strings.Contains(s, "initial resource") })

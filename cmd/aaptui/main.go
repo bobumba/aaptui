@@ -46,7 +46,7 @@ func runWithArgs(args []string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	m := tui.New(ctx, connection).WithTemplates(client).WithProjects(client).WithJobs(client).WithWorkflows(client).WithCancellation(client).WithOutput(func(ctx context.Context, ref aap.JobRef) tui.OutputSession { return client.NewOutputSession(ctx, ref) })
+	m := tui.New(ctx, connection).WithTemplates(client).WithProjects(client).WithInventories(client).WithInventoryContents(client).WithJobs(client).WithWorkflows(client).WithCancellation(client).WithOutput(func(ctx context.Context, ref aap.JobRef) tui.OutputSession { return client.NewOutputSession(ctx, ref) })
 	defer func() {
 		if err := m.Close(); err != nil {
 			resultErr = errors.Join(resultErr, err)

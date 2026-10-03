@@ -32,7 +32,7 @@ func assertFrameSize(t *testing.T, m *Model) []string {
 }
 
 func TestStyledFramesFitTerminal(t *testing.T) {
-	for screen := mainScreen; screen <= projectsScreen; screen++ {
+	for screen := mainScreen; screen <= hostsScreen; screen++ {
 		for _, size := range [][2]int{{1, 1}, {2, 2}, {19, 6}, {30, 10}, {40, 12}, {80, 24}} {
 			for _, state := range []string{"normal", "loading", "error", "search", "confirmation"} {
 				t.Run(fmt.Sprintf("%d/%dx%d/%s", screen, size[0], size[1], state), func(t *testing.T) {
@@ -45,6 +45,11 @@ func TestStyledFramesFitTerminal(t *testing.T) {
 					m.jobPage.Items = []aap.JobSummary{{Name: name, Status: "running"}}
 					m.nodePage.Items = []aap.WorkflowNode{{Name: name, Status: "pending", Reason: "Not launched"}}
 					m.templateDetail.Description = name
+					m.inventory = aap.InventorySummary{ID: 7, Name: name}
+					m.group = aap.GroupSummary{ID: 9, Name: name}
+					m.inventoryPage.Items = []aap.InventorySummary{{Name: name}}
+					m.groupPage.Items = []aap.GroupSummary{{Name: name}}
+					m.hostPage.Items = []aap.HostSummary{{Name: name}}
 					m.jobDetail.Description = name
 					m.outputUpdate = aap.OutputUpdate{Chunk: aap.OutputChunk{Text: strings.Repeat(name+"\n", 20)}, Retrying: true}
 					switch state {
@@ -68,7 +73,7 @@ func TestStyledFramesFitTerminal(t *testing.T) {
 }
 
 func TestSelectionVisibleWithMessages(t *testing.T) {
-	for _, screen := range []screen{templatesScreen, projectsScreen, jobsScreen, workflowScreen} {
+	for _, screen := range []screen{templatesScreen, projectsScreen, jobsScreen, workflowScreen, inventoriesScreen, groupsScreen, hostsScreen} {
 		for _, width := range []int{30, 80} {
 			m := New(context.Background(), "gateway")
 			m.screen, m.width, m.height = screen, width, 10
@@ -78,6 +83,9 @@ func TestSelectionVisibleWithMessages(t *testing.T) {
 				m.templatePage.Items = append(m.templatePage.Items, aap.TemplateSummary{Name: name})
 				m.jobPage.Items = append(m.jobPage.Items, aap.JobSummary{Name: name, Status: "running"})
 				m.nodePage.Items = append(m.nodePage.Items, aap.WorkflowNode{Name: name, Status: "pending"})
+				m.inventoryPage.Items = append(m.inventoryPage.Items, aap.InventorySummary{Name: name})
+				m.groupPage.Items = append(m.groupPage.Items, aap.GroupSummary{Name: name})
+				m.hostPage.Items = append(m.hostPage.Items, aap.HostSummary{Name: name})
 			}
 			m.selected = 49
 			lines := assertFrameSize(t, m)

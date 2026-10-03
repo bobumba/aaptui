@@ -50,6 +50,30 @@ pending or skipped. Children with missing summaries can be resolved by unified
 ID; permission/deletion errors remain visible. Nested workflows use the same
 navigation and retain their parent stack.
 
+## Inventories
+
+The inventory list reads `inventories/` using the existing bounded pagination
+contract. Resources expose `id`, `type: inventory`, `name`, `description`, and
+`kind` (empty for a standard inventory). Supporting evidence is AWX **24.6.1**,
+commit `94e5795dfc37b95c576d61f3e3b4e936c021548c`,
+[`awx/api/urls/inventory.py`](https://github.com/ansible/awx/blob/24.6.1/awx/api/urls/inventory.py)
+and `awx/api/serializers.py`. Fixtures are synthetic; AAP 2.6 remains unverified.
+
+Inventory Groups reads `inventories/{id}/groups/` (all groups, rather than only
+roots). Inventory Hosts reads `inventories/{id}/hosts/`. A group's child list
+reads `groups/{id}/children/`; its Hosts list reads `groups/{id}/all_hosts/`,
+including descendants. These collections use the same bounded search and page
+contract. Groups and hosts expose `inventory`; hosts also expose `enabled`.
+Smart inventories may include hosts owned by a different inventory, so host
+ownership is not compared with the selected inventory. Server permission and
+missing-resource responses remain authoritative, including unavailable groups.
+
+Supporting evidence at the same upstream revision:
+[`awx/api/urls/group.py`](https://github.com/ansible/awx/blob/24.6.1/awx/api/urls/group.py),
+`InventoryGroupsList`, `InventoryHostsList`, `GroupChildrenList`, and
+`GroupAllHostsList` in `awx/api/views/__init__.py`, plus `GroupSerializer` and
+`HostSerializer` in `awx/api/serializers.py`. No inventory mutations are performed.
+
 ## Output and completion
 
 Request `stdout/?format=json&start_line=N&end_line=M`. Ranges are zero-based,

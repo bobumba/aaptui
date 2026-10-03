@@ -60,7 +60,7 @@ func (m *Model) outputLines() int {
 }
 
 func (m *Model) header(width int) []string {
-	title := []string{"Main", "Job Templates", "Jobs", "Template details", "Job details", "Workflow children", "Output", "Projects"}[m.screen]
+	title := []string{"Main", "Job Templates", "Jobs", "Template details", "Job details", "Workflow children", "Output", "Projects", "Inventories", "Inventory", "Groups", "Group", "Hosts"}[m.screen]
 	if m.screen == templateScreen && m.templateDetail.Ref.Type == aap.ProjectTemplate {
 		title = "Project details"
 	}
@@ -69,8 +69,35 @@ func (m *Model) header(width int) []string {
 		title += m.styles.warning.Render(" · Loading…")
 	}
 	lines := []string{title, m.styles.muted.Render(m.connection), m.styles.muted.Render(strings.Repeat("─", width))}
+	if m.screen == inventoryScreen || m.screen == groupsScreen || m.screen == groupScreen || m.screen == hostsScreen {
+		location := fmt.Sprintf("Inventory %d · %s", m.inventory.ID, singleLine(m.inventory.Name))
+		if m.group.ID > 0 {
+			location += fmt.Sprintf(" / Group %d · %s", m.group.ID, singleLine(m.group.Name))
+		}
+		lines = append(lines, m.styles.key.Render(location))
+		if m.screen == hostsScreen && m.group.ID > 0 {
+			lines = append(lines, m.styles.muted.Render("Hosts including descendant groups"))
+		}
+	}
+	if m.inventoryList() {
+		count := m.inventoryPage.Count
+		if m.screen == groupsScreen {
+			count = m.groupPage.Count
+		}
+		if m.screen == hostsScreen {
+			count = m.hostPage.Count
+		}
+		paging := fmt.Sprintf("%d results", count)
+		if m.inventoryCursor(false).Present() {
+			paging += " · p previous"
+		}
+		if m.inventoryCursor(true).Present() {
+			paging += " · n next"
+		}
+		lines = append(lines, m.styles.muted.Render(paging))
+	}
 	switch m.screen {
-	case templatesScreen, projectsScreen, jobsScreen, workflowScreen:
+	case templatesScreen, projectsScreen, inventoriesScreen, groupsScreen, hostsScreen, jobsScreen, workflowScreen:
 		lines = append(lines, m.columnHeader(width))
 	case outputScreen:
 		lines = append(lines, m.styles.muted.Render(fmt.Sprintf("Job %d · lines %d–%d of %d", m.jobDetail.Ref.ID, m.outputUpdate.Chunk.Start, m.outputUpdate.Chunk.End, m.outputUpdate.Chunk.AbsoluteEnd)))
@@ -185,8 +212,12 @@ func (m *Model) screenHelp(width int) []string {
 	switch m.screen {
 	case mainScreen:
 		lines = []string{"↑/↓ select · Enter open · q quit · Ctrl-C quit"}
-	case templatesScreen, projectsScreen, jobsScreen:
+	case inventoryScreen, groupScreen:
+		lines = []string{"↑/↓ select · Enter open", back}
+	case templatesScreen, projectsScreen, inventoriesScreen, groupsScreen, jobsScreen:
 		lines = []string{"↑/↓ select · Enter open · / search · r refresh · n/p page", back}
+	case hostsScreen:
+		lines = []string{"↑/↓ select · / search · r refresh · n/p page", back}
 	case templateScreen:
 		lines = []string{"↑/↓ scroll · Esc back · q quit · Ctrl-C quit"}
 	case jobScreen:
@@ -200,8 +231,12 @@ func (m *Model) screenHelp(width int) []string {
 		switch m.screen {
 		case mainScreen:
 			lines = []string{"↑/↓ select · Enter open", "q quit · Ctrl-C quit"}
-		case templatesScreen, projectsScreen, jobsScreen:
+		case inventoryScreen, groupScreen:
+			lines = []string{"↑/↓ select · Enter open", back}
+		case templatesScreen, projectsScreen, inventoriesScreen, groupsScreen, jobsScreen:
 			lines = []string{"↑/↓ select · Enter open", "/ search · r refresh · n/p page", back}
+		case hostsScreen:
+			lines = []string{"↑/↓ select · / search", "r refresh · n/p page", back}
 		case templateScreen:
 			lines = []string{"↑/↓ scroll", back}
 		case jobScreen:

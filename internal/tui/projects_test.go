@@ -82,9 +82,8 @@ func TestProjectNavigation(t *testing.T) {
 			}
 			m.Update(key("j"))
 			m.Update(key("j"))
-			m.Update(key("j"))
 			if m.selected != 2 {
-				t.Fatal("main menu selection is not bounded")
+				t.Fatal("Projects is not the third main menu entry")
 			}
 			// Opening Projects must discard any cached Job Templates list.
 			m.templatePage.Items = []aap.TemplateSummary{{Name: "old template"}}

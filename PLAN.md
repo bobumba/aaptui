@@ -1,6 +1,6 @@
 # AAP TUI Implementation Plan
 
-Status: inventory navigation milestones planned; implementation has not started.
+Status: milestones 1 and 2 complete and verified offline.
 
 This plan refines `SPEC.md` and follows `AGENTS.md`. No application code is
 authorized by the design discussion alone. Implement one milestone at a time
@@ -207,21 +207,33 @@ unavailable-output state while remaining viewable.
 
 ## Navigation
 
-Main contains Job Templates, Jobs, and Projects. Use Enter to open, Esc to return,
-`q` to quit outside text entry, and Ctrl-C to quit consistently. Search input consumes
+Main contains Job Templates, Jobs, Projects, and Inventories. Use Enter to open,
+Esc to return, `q` to quit outside text entry, and Ctrl-C to quit consistently. Search input consumes
 ordinary characters; Esc first exits input mode. Provide visible contextual help,
 manual refresh where useful, page navigation, and output follow controls. Bind
 server cancellation separately and require confirmation identifying the job.
 
 ## Milestones and acceptance tests
 
-The following milestones are planning only. Do not execute them until
-implementation is requested.
+Implementation is authorized by the request to implement the remaining milestones.
 
 | Milestone | Deliverable | Independently testable acceptance criteria |
 | --- | --- | --- |
 | 1. Inventories main menu | Add Inventories as a main menu option and list inventories for selection | Verify the main menu includes Inventories, opening it lists inventories, and back navigation returns to the main menu. |
 | 2. Inventory groups and hosts | Selecting an inventory opens a submenu with Groups and Hosts | Verify Hosts lists all hosts in the selected inventory, including hosts across pages. Verify Groups displays the inventory's groups and allows traversal through groups to display hosts. Verify back navigation preserves the selected inventory and traversal context. |
+
+Milestone 1: inventory API reader, searchable/paginated list, menu wiring, and
+back navigation implemented. `go test ./...` and `go vet ./...` passed.
+
+Milestone 2: inventories open Groups/Hosts; groups open Child groups/Hosts.
+Group Hosts includes descendants through `all_hosts/`. Each collection uses
+bounded server pages with `n`/`p` navigation, search, and refresh. Back navigation
+restores inventory/group identity, page, search, and selection. API and TUI tests
+use synthetic fixtures for both gateway and direct prefixes.
+
+Final verification: changed Go files formatted with `gofmt -w`;
+`go test ./...`, `go vet ./...`, `go test -race ./...`, and `git diff --check`
+passed. Deployed AAP 2.6 validation remains unavailable.
 
 For each implementation milestone: format changed Go files with `gofmt -w`, run
 `go test ./...` and `go vet ./...`, review changes for unintended scope, and update

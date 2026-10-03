@@ -38,7 +38,7 @@ func (m *Model) body(width, height int) []string {
 	start := max(0, m.selected-rows+1)
 	switch m.screen {
 	case mainScreen:
-		labels := []string{"Job Templates", "Jobs", "Projects"}
+		labels := []string{"Job Templates", "Jobs", "Projects", "Inventories"}
 		for i := start; i < min(len(labels), start+rows); i++ {
 			lines = append(lines, m.selectRow(labels[i], i == m.selected, width))
 		}
@@ -53,6 +53,49 @@ func (m *Model) body(width, height int) []string {
 				resource = "projects"
 			}
 			lines = []string{m.emptyState(resource)}
+		}
+	case inventoriesScreen:
+		for i := start; i < min(len(m.inventoryPage.Items), start+rows); i++ {
+			v := m.inventoryPage.Items[i]
+			kind := v.Kind
+			if kind == "" {
+				kind = "inventory"
+			}
+			lines = append(lines, m.resourceRow(strconv.Itoa(v.ID), v.Name, kind, "", i == m.selected, width))
+		}
+		if len(m.inventoryPage.Items) == 0 {
+			lines = []string{m.emptyState("inventories")}
+		}
+	case inventoryScreen, groupScreen:
+		labels := []string{"Groups", "Hosts"}
+		if m.screen == groupScreen {
+			labels = []string{"Child groups", "Hosts (including descendants)"}
+		}
+		for i := start; i < min(len(labels), start+rows); i++ {
+			lines = append(lines, m.selectRow(labels[i], i == m.selected, width))
+		}
+	case groupsScreen:
+		for i := start; i < min(len(m.groupPage.Items), start+rows); i++ {
+			v := m.groupPage.Items[i]
+			lines = append(lines, m.resourceRow(strconv.Itoa(v.ID), v.Name, "group", "", i == m.selected, width))
+		}
+		if len(m.groupPage.Items) == 0 {
+			lines = []string{m.emptyState("groups")}
+		}
+	case hostsScreen:
+		for i := start; i < min(len(m.hostPage.Items), start+rows); i++ {
+			v := m.hostPage.Items[i]
+			status := "unknown"
+			if v.Enabled != nil {
+				status = "disabled"
+				if *v.Enabled {
+					status = "enabled"
+				}
+			}
+			lines = append(lines, m.resourceRow(strconv.Itoa(v.ID), v.Name, "host", status, i == m.selected, width))
+		}
+		if len(m.hostPage.Items) == 0 {
+			lines = []string{m.emptyState("hosts")}
 		}
 	case jobsScreen:
 		for i := start; i < min(len(m.jobPage.Items), start+rows); i++ {
@@ -126,7 +169,7 @@ func (m *Model) columns(width int) columns {
 		c.kind = 22
 		c.name -= c.kind + 1
 	}
-	if m.screen == jobsScreen || m.screen == workflowScreen || m.screen == projectsScreen {
+	if m.screen == jobsScreen || m.screen == workflowScreen || m.screen == projectsScreen || m.screen == hostsScreen {
 		if width >= 20 {
 			c.status = 10
 			c.name -= c.status + 1

@@ -24,6 +24,11 @@ const (
 	workflowScreen
 	outputScreen
 	projectsScreen
+	inventoriesScreen
+	inventoryScreen
+	groupsScreen
+	groupScreen
+	hostsScreen
 )
 
 type Canceller interface {
@@ -51,15 +56,20 @@ type ProjectReader interface {
 	Template(context.Context, aap.TemplateRef) (aap.TemplateDetails, error)
 }
 type frame struct {
-	detailTop int
-	job       aap.JobDetails
-	nodes     aap.Page[aap.WorkflowNode]
-	jobs      aap.Page[aap.JobSummary]
-	templates aap.Page[aap.TemplateSummary]
-	template  aap.TemplateDetails
-	screen    screen
-	selected  int
-	search    string
+	inventory   aap.InventorySummary
+	group       aap.GroupSummary
+	groups      aap.Page[aap.GroupSummary]
+	hosts       aap.Page[aap.HostSummary]
+	inventories aap.Page[aap.InventorySummary]
+	detailTop   int
+	job         aap.JobDetails
+	nodes       aap.Page[aap.WorkflowNode]
+	jobs        aap.Page[aap.JobSummary]
+	templates   aap.Page[aap.TemplateSummary]
+	template    aap.TemplateDetails
+	screen      screen
+	selected    int
+	search      string
 }
 type resultMsg struct {
 	id    uint64
@@ -67,6 +77,13 @@ type resultMsg struct {
 	err   error
 }
 type Model struct {
+	inventoryContents          InventoryContentsReader
+	inventory                  aap.InventorySummary
+	group                      aap.GroupSummary
+	groupPage                  aap.Page[aap.GroupSummary]
+	hostPage                   aap.Page[aap.HostSummary]
+	inventories                InventoryReader
+	inventoryPage              aap.Page[aap.InventorySummary]
 	styles                     styles
 	detailTop, outputLeft      int
 	canceller                  Canceller
@@ -247,7 +264,13 @@ func (m *Model) begin(work func(context.Context) (any, error)) tea.Cmd {
 	return func() tea.Msg { v, err := work(ctx); return resultMsg{id, v, err} }
 }
 func (m *Model) move(s screen) {
-	m.stack = append(m.stack, frame{screen: m.screen, selected: m.selected, search: m.search, job: m.jobDetail, nodes: m.nodePage, jobs: m.jobPage, templates: m.templatePage, template: m.templateDetail, detailTop: m.detailTop})
+	m.stack = append(m.stack, frame{
+		screen: m.screen, selected: m.selected, search: m.search, detailTop: m.detailTop,
+		job: m.jobDetail, nodes: m.nodePage, jobs: m.jobPage,
+		templates: m.templatePage, template: m.templateDetail,
+		inventories: m.inventoryPage, inventory: m.inventory,
+		group: m.group, groups: m.groupPage, hosts: m.hostPage,
+	})
 	m.invalidate()
 	m.screen = s
 	m.selected = 0
@@ -278,6 +301,11 @@ func (m *Model) back() {
 		m.jobPage = f.jobs
 		m.templatePage = f.templates
 		m.templateDetail = f.template
+		m.inventoryPage = f.inventories
+		m.inventory = f.inventory
+		m.group = f.group
+		m.groupPage = f.groups
+		m.hostPage = f.hosts
 	}
 }
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -340,6 +368,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err == nil {
 			switch v := msg.value.(type) {
+			case aap.Page[aap.GroupSummary]:
+				m.groupPage = v
+				m.selected = 0
+				return m, tea.ClearScreen
+			case aap.Page[aap.HostSummary]:
+				m.hostPage = v
+				m.selected = 0
+				return m, tea.ClearScreen
+			case aap.Page[aap.InventorySummary]:
+				m.inventoryPage = v
+				m.selected = 0
+				return m, tea.ClearScreen
 			case aap.Page[aap.TemplateSummary]:
 				m.templatePage = v
 				m.selected = 0
@@ -410,6 +450,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.screen == projectsScreen {
 					return m, m.loadProjects(aap.PageCursor{})
 				}
+				if m.inventoryList() {
+					return m, m.loadInventoryList(aap.PageCursor{})
+				}
 			case "backspace":
 				r := []rune(m.search)
 				if len(r) > 0 {
@@ -447,7 +490,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, cleanup
 		case "/":
-			if m.screen == jobsScreen || m.screen == templatesScreen || m.screen == projectsScreen {
+			if m.screen == jobsScreen || m.screen == templatesScreen || m.screen == projectsScreen || m.inventoryList() {
 				m.editing = true
 			}
 		case "up", "k":
@@ -471,6 +514,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.readOutput(start), m.nextOutput())
 			}
 		case "r":
+			if m.inventoryList() {
+				return m, m.loadInventoryList(aap.PageCursor{})
+			}
 			if m.screen == outputScreen {
 				return m, m.nextOutput()
 			}
@@ -521,6 +567,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.loadNodes(aap.PageCursor{})
 			}
 		case "n":
+			if m.inventoryList() && m.inventoryCursor(true).Present() {
+				return m, m.loadInventoryList(m.inventoryCursor(true))
+			}
 			if m.screen == projectsScreen && m.templatePage.Next.Present() {
 				return m, m.loadProjects(m.templatePage.Next)
 			}
@@ -534,6 +583,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.loadNodes(m.nodePage.Next)
 			}
 		case "p":
+			if m.inventoryList() && m.inventoryCursor(false).Present() {
+				return m, m.loadInventoryList(m.inventoryCursor(false))
+			}
 			if m.screen == projectsScreen && m.templatePage.Previous.Present() {
 				return m, m.loadProjects(m.templatePage.Previous)
 			}
@@ -581,17 +633,52 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.readOutput(m.outputTop)
 			}
 			if m.screen == mainScreen {
-				m.selected = min(2, m.selected+1)
+				m.selected = min(3, m.selected+1)
 			} else if m.screen == templatesScreen || m.screen == projectsScreen {
 				m.selected = min(max(len(m.templatePage.Items)-1, 0), m.selected+1)
 			}
 			if m.screen == jobsScreen {
 				m.selected = min(max(len(m.jobPage.Items)-1, 0), m.selected+1)
 			}
+			if m.screen == inventoriesScreen {
+				m.selected = min(max(len(m.inventoryPage.Items)-1, 0), m.selected+1)
+			}
+			if m.screen == inventoryScreen || m.screen == groupScreen {
+				m.selected = min(1, m.selected+1)
+			}
+			if m.screen == groupsScreen {
+				m.selected = min(max(len(m.groupPage.Items)-1, 0), m.selected+1)
+			}
+			if m.screen == hostsScreen {
+				m.selected = min(max(len(m.hostPage.Items)-1, 0), m.selected+1)
+			}
 			if m.screen == workflowScreen {
 				m.selected = min(max(len(m.nodePage.Items)-1, 0), m.selected+1)
 			}
 		case "enter":
+			if m.screen == inventoriesScreen && !m.loading && m.selected < len(m.inventoryPage.Items) {
+				inventory := m.inventoryPage.Items[m.selected]
+				m.move(inventoryScreen)
+				m.inventory = inventory
+				m.group = aap.GroupSummary{}
+				return m, nil
+			}
+			if m.screen == groupsScreen && !m.loading && m.selected < len(m.groupPage.Items) {
+				group := m.groupPage.Items[m.selected]
+				m.move(groupScreen)
+				m.group = group
+				return m, nil
+			}
+			if (m.screen == inventoryScreen || m.screen == groupScreen) && m.inventoryContents != nil {
+				s := groupsScreen
+				if m.selected == 1 {
+					s = hostsScreen
+				}
+				m.move(s)
+				m.groupPage = aap.Page[aap.GroupSummary]{}
+				m.hostPage = aap.Page[aap.HostSummary]{}
+				return m, m.loadInventoryList(aap.PageCursor{})
+			}
 			if m.screen == mainScreen {
 				switch m.selected {
 				case 0:
@@ -605,6 +692,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.move(projectsScreen)
 					m.templatePage = aap.Page[aap.TemplateSummary]{}
 					return m, m.loadProjects(aap.PageCursor{})
+				case 3:
+					m.move(inventoriesScreen)
+					m.inventoryPage = aap.Page[aap.InventorySummary]{}
+					return m, m.loadInventories(aap.PageCursor{})
 				}
 			} else if m.screen == projectsScreen && !m.loading && m.projects != nil && m.selected < len(m.templatePage.Items) {
 				summary := m.templatePage.Items[m.selected]
