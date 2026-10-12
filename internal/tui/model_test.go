@@ -20,9 +20,15 @@ func key(s string) tea.KeyPressMsg {
 	case "esc":
 		k.Text = ""
 		k.Code = tea.KeyEscape
-	case "ctrl+c":
+	case "pgup", "pgdown":
 		k.Text = ""
-		k.Code = 'c'
+		k.Code = tea.KeyPgUp
+		if s == "pgdown" {
+			k.Code = tea.KeyPgDown
+		}
+	case "ctrl+c", "ctrl+u", "ctrl+d":
+		k.Text = ""
+		k.Code = rune(s[len(s)-1])
 		k.Mod = tea.ModCtrl
 	case "backspace":
 		k.Text = ""

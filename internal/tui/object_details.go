@@ -23,10 +23,13 @@ func (m *Model) WithObjectDetails(reader ObjectDetailsReader) *Model {
 func (m *Model) loadObjectDetails() tea.Cmd {
 	reader := m.objectDetails
 	if reader == nil {
+		if m.screen == hostScreen {
+			return m.loadHostGroups(aap.PageCursor{})
+		}
 		return nil
 	}
 	s, inventoryID, groupID, hostID := m.screen, m.inventory.ID, m.group.ID, m.hostDetail.ID
-	return m.begin(func(ctx context.Context) (any, error) {
+	cmd := m.begin(func(ctx context.Context) (any, error) {
 		switch s {
 		case inventoryScreen:
 			return reader.Inventory(ctx, inventoryID)
@@ -36,6 +39,10 @@ func (m *Model) loadObjectDetails() tea.Cmd {
 			return reader.Host(ctx, hostID)
 		}
 	})
+	if s == hostScreen {
+		return tea.Batch(cmd, m.loadHostGroups(aap.PageCursor{}))
+	}
+	return cmd
 }
 
 func (m *Model) scrollingDetails() bool {

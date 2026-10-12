@@ -90,6 +90,21 @@ Supporting evidence at the same upstream revision:
 `GroupAllHostsList` in `awx/api/views/__init__.py`, plus `GroupSerializer` and
 `HostSerializer` in `awx/api/serializers.py`. No inventory mutations are performed.
 
+Host membership reviewed 2026-10-12 against the same AWX **24.6.1** commit
+`94e5795dfc37b95c576d61f3e3b4e936c021548c`:
+[`awx/api/urls/host.py`](https://github.com/ansible/awx/blob/24.6.1/awx/api/urls/host.py)
+and [`HostAllGroupsList` in the views](https://github.com/ansible/awx/blob/24.6.1/awx/api/views/__init__.py).
+Read `hosts/{id}/all_groups/` to include direct membership and inherited membership
+through parent groups, as requested. `hosts/{id}/groups/` contains only direct
+membership and is not used. `HostAllGroupsList` intersects the host's `all_groups`
+with groups visible to the requesting user and returns `GroupSerializer` resources
+using the ordinary bounded page envelope. Reuse group summaries, text sanitization,
+and collection-bound cursors. New fixtures are synthetic; this upstream contract
+remains an assumption for AAP 2.6. Membership reads are independent of host detail
+reads, cancellable, and paginated on demand with `n`/`p`; they never fetch the whole
+collection automatically. Empty visible membership differs from an unavailable or
+failed request. No membership mutations are performed.
+
 ## Object field review
 
 Reviewed 2026-10-12 against AWX **24.6.1**, commit

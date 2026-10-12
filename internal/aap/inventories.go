@@ -85,6 +85,14 @@ func (c *Client) GroupChildren(ctx context.Context, groupID int, o ListOptions) 
 	return c.listGroups(ctx, fmt.Sprintf("groups/%d/children/", groupID), o)
 }
 
+// HostGroups includes groups the host belongs to directly or through parent groups.
+func (c *Client) HostGroups(ctx context.Context, hostID int, o ListOptions) (Page[GroupSummary], error) {
+	if hostID <= 0 {
+		return Page[GroupSummary]{}, apiError(Malformed, "list host groups")
+	}
+	return c.listGroups(ctx, fmt.Sprintf("hosts/%d/all_groups/", hostID), o)
+}
+
 func (c *Client) listGroups(ctx context.Context, route string, o ListOptions) (Page[GroupSummary], error) {
 	p, err := readPage[wireInventoryMember](ctx, c, route, o)
 	if err != nil {

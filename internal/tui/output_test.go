@@ -2,9 +2,11 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"aaptui/internal/aap"
 )
@@ -74,5 +76,95 @@ func TestCollectWhilePausedAndIgnoreOldSession(t *testing.T) {
 	m.Update(key("q"))
 	if !m.quitting || m.ctx.Err() == nil {
 		t.Fatal("quit did not cancel")
+	}
+}
+
+func TestOutputPageAliases(t *testing.T) {
+	for _, binding := range []struct{ page, alias string }{{"pgup", "ctrl+u"}, {"pgdown", "ctrl+d"}} {
+		for _, state := range []struct {
+			name                        string
+			top                         int
+			following, loading, editing bool
+		}{
+			{name: "middle", top: 15},
+			{name: "start"},
+			{name: "end", top: 29},
+			{name: "following", following: true},
+			{name: "loading", top: 15, loading: true},
+			{name: "editing", top: 15, editing: true},
+		} {
+			t.Run(binding.alias+"/"+state.name, func(t *testing.T) {
+				var tops []int
+				for _, input := range []string{binding.page, binding.alias} {
+					f := &fakeOutput{}
+					m := New(context.Background(), "")
+					defer m.Close()
+					m.screen, m.output = outputScreen, f
+					m.outputTop, m.following = state.top, state.following
+					m.loading, m.editing = state.loading, state.editing
+					m.search = "keep"
+					m.outputUpdate = aap.OutputUpdate{Chunk: aap.OutputChunk{Start: 10, AbsoluteEnd: 30, Text: "line\n"}}
+					_, cmd := m.Update(key(input))
+					if state.loading || state.editing {
+						if cmd != nil || m.outputTop != state.top || m.following != state.following || m.search != "keep" {
+							t.Fatal("paging changed loading/input state")
+						}
+					} else {
+						if cmd == nil || m.following {
+							t.Fatal("paging did not pause and read history")
+						}
+						cmd()
+						if len(f.reads) != 1 || f.reads[0] != m.outputTop {
+							t.Fatal("wrong history range")
+						}
+						start := state.top
+						if state.following {
+							start = 10
+						}
+						delta := m.outputLines()
+						if binding.page == "pgup" {
+							delta = -delta
+						}
+						if m.outputTop != max(0, min(29, start+delta)) {
+							t.Fatal("wrong page distance or boundary")
+						}
+					}
+					tops = append(tops, m.outputTop)
+				}
+				if tops[0] != tops[1] {
+					t.Fatal("alias differs from page key")
+				}
+			})
+		}
+	}
+}
+
+func TestOutputPageAliasHelp(t *testing.T) {
+	m := New(context.Background(), "")
+	defer m.Close()
+	m.screen = outputScreen
+	for _, width := range []int{40, 80, 120} {
+		help := ansi.Strip(strings.Join(m.screenHelp(width), "\n"))
+		if !strings.Contains(help, "Ctrl-U") || !strings.Contains(help, "Ctrl-D") {
+			t.Fatalf("missing aliases at width %d: %s", width, help)
+		}
+	}
+}
+
+func TestPageAliasesPreserveOtherScreenFocus(t *testing.T) {
+	for s := mainScreen; s <= nodeScreen; s++ {
+		if s == outputScreen {
+			continue
+		}
+		m := New(context.Background(), "")
+		defer m.Close()
+		m.screen, m.detailTop, m.selected = s, 10, 1
+		m.objectDetailsFocus, m.templateJobsFocus = true, true
+		for _, input := range []string{"ctrl+u", "ctrl+d"} {
+			_, cmd := m.Update(key(input))
+			if cmd != nil || m.detailTop != 10 || m.selected != 1 || !m.objectDetailsFocus || !m.templateJobsFocus {
+				t.Fatalf("alias changed focus or navigation on screen %d", s)
+			}
+		}
 	}
 }

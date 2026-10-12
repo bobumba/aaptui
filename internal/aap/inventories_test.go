@@ -49,13 +49,13 @@ func TestInventoryPagination(t *testing.T) {
 
 func TestInventoryMembersBothPrefixes(t *testing.T) {
 	for _, mode := range []config.ConnectionMode{config.Gateway, config.Direct} {
-		for _, route := range []string{"inventories/7/groups/", "inventories/7/hosts/", "groups/9/children/", "groups/9/all_hosts/"} {
+		for _, route := range []string{"inventories/7/groups/", "inventories/7/hosts/", "groups/9/children/", "groups/9/all_hosts/", "hosts/11/all_groups/"} {
 			t.Run(string(mode)+"/"+route, func(t *testing.T) {
 				prefix := "/api/controller/v2/"
 				if mode == config.Direct {
 					prefix = "/api/v2/"
 				}
-				isHost := strings.Contains(route, "hosts/")
+				isHost := strings.HasSuffix(route, "hosts/")
 				c, _ := testClient(t, mode, func(w http.ResponseWriter, r *http.Request) {
 					if r.Method != http.MethodGet || r.URL.Path != prefix+route || r.Header.Get("Authorization") != "Bearer secret" || r.URL.Query().Get("search") != "member search" || r.URL.Query().Get("page_size") != "1" {
 						t.Errorf("unexpected request: %s", r.URL)
@@ -104,6 +104,8 @@ func TestInventoryMembersBothPrefixes(t *testing.T) {
 					id := 7
 					if strings.HasPrefix(route, "groups/") {
 						read, id = c.GroupChildren, 9
+					} else if strings.HasPrefix(route, "hosts/") {
+						read, id = c.HostGroups, 11
 					}
 					p, err := read(ctx, id, o)
 					if err != nil || len(p.Items) != 1 || p.Items[0].Name != "[redacted]member name" || p.Items[0].Description != "[redacted]description" || p.Items[0].InventoryID != 7 || !p.Next.Present() {
@@ -176,6 +178,9 @@ func TestInventoryMembersRejectInvalidIDsAndCursors(t *testing.T) {
 		if _, err := c.GroupChildren(ctx, id, ListOptions{}); err == nil {
 			t.Fatal("invalid group ID accepted")
 		}
+		if _, err := c.HostGroups(ctx, id, ListOptions{}); err == nil {
+			t.Fatal("invalid host ID accepted")
+		}
 		if _, err := c.GroupHosts(ctx, id, ListOptions{}); err == nil {
 			t.Fatal("invalid group ID accepted")
 		}
@@ -183,6 +188,9 @@ func TestInventoryMembersRejectInvalidIDsAndCursors(t *testing.T) {
 	o := ListOptions{Cursor: PageCursor{link: "/api/v2/groups/10/all_hosts/?page=2"}}
 	if _, err := c.GroupHosts(ctx, 9, o); err == nil {
 		t.Fatal("cross-group cursor accepted")
+	}
+	if _, err := c.HostGroups(ctx, 11, ListOptions{Cursor: PageCursor{link: "/api/v2/hosts/12/all_groups/?page=2"}}); err == nil {
+		t.Fatal("cross-host cursor accepted")
 	}
 	if hits != 0 {
 		t.Fatal("invalid input reached server")

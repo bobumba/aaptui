@@ -34,8 +34,12 @@ from descendant groups. Use `n`/`p` to reach hosts and groups across pages; Esc 
 page, search, selection, and inventory/group context. Inventory and group screens
 also display object details; Tab switches between menu selection and detail
 scrolling. Enter on a host opens its details, including enabled state, owning
-inventory, instance ID, failure flags, last job, and facts timestamp. Use `r` to
-refresh inventory, group, or host details.
+inventory, instance ID, failure flags, last job, and facts timestamp. The Groups
+section lists visible direct and inherited memberships, including parent groups;
+use `n`/`p` to page memberships and arrows or `j`/`k` to scroll. Loading, empty,
+unavailable, and failed membership requests have distinct states; other host
+information remains readable. Use `r` to refresh inventory, group, or host details
+and host memberships.
 
 Object views include pertinent fields reviewed against the pinned API source:
 creation/modification times and ownership, job launch and failure information,
@@ -151,13 +155,13 @@ full details and messages.
 | Main/lists | arrows or `j`/`k` select; Enter opens |
 | Template/project/job/inventory/group/host lists | `/` enters search; Enter applies server-side search; Esc exits input; `n`/`p` next/previous page; `r` refreshes |
 | Inventory/group details and menus | Tab switches menu/details focus; arrows or `j`/`k` select/scroll; Enter opens the selected menu item; `r` refreshes details; Esc returns |
-| Host lists/details | Enter opens details; arrows or `j`/`k` scroll details; `r` refreshes; Esc restores the list |
+| Host lists/details | Enter opens details; arrows or `j`/`k` scroll details; `n`/`p` page direct/inherited groups; `r` refreshes details and memberships; Esc restores the list |
 | Template details with jobs | Tab switches details/jobs focus; arrows or `j`/`k` scroll/select; Enter opens a job; `n`/`p` page; `r` refreshes jobs; Esc returns |
 | Project details | arrows or `j`/`k` scroll wrapped details; Esc returns |
 | Job details | `o` output; `w` workflow children; `c` cancellation dialog; `r` refresh; arrows or `j`/`k` scroll |
 | Workflow children | `d` opens node details; Enter opens a launched child; `n`/`p` page; `r` refresh |
 | Workflow node details | arrows or `j`/`k` scroll; Enter opens a launched child; Esc restores the node list |
-| Output | arrows or `j`/`k` scroll; PgUp/PgDown page output; left/right or `h`/`l` pan; `f` follows newest output; `r` resumes after a stopped error |
+| Output | arrows or `j`/`k` scroll; PgUp/PgDown or Ctrl-U/Ctrl-D page output; left/right or `h`/`l` pan; `f` follows newest output; `r` resumes after a stopped error |
 | Cancellation dialog | `y` or Enter confirms the identified job; `n` or Esc dismisses |
 
 Search consumes ordinary characters, including `q`. Search and workflow results

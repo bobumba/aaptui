@@ -1,6 +1,6 @@
 # AAP TUI Implementation Plan
 
-Status: both UI milestones implemented and verified offline.
+Status: both milestones implemented and verified offline.
 Deployed AAP 2.6 validation remains unavailable.
 
 This plan refines `SPEC.md` and follows `AGENTS.md`. No application code is
@@ -218,73 +218,63 @@ server cancellation separately and require confirmation identifying the job.
 
 ## Milestones and acceptance tests
 
-### 1. Consolidate job details and separate capabilities
+### 1. Add Ctrl-U and Ctrl-D aliases for page navigation
 
-Place all API-returned job information under one **Job details** section,
-including identity, description, status, timestamps, metadata, related resource
-references, execution settings, and type-specific fields. Move capabilities into
-a separate **Capabilities** section that clearly identifies the available user
-navigation and actions: output, workflow children, and cancellation. Keep
-capability state and unavailability reasons with those controls.
+Allow the existing Page Up and Page Down actions to be triggered with `Ctrl-U`
+and `Ctrl-D`, respectively, using familiar shortcuts from less and Vim. These
+shortcuts should perform the same actions as the existing page keys.
 
 Acceptance criteria:
 
-- All currently displayed API-returned job fields appear in the Job details
-  section; no metadata or configuration fields appear under Capabilities.
-- Capabilities show the relevant existing key bindings and distinguish available,
-  unavailable, and unknown operations with their reasons. Preserve the existing
-  output and workflow navigation and cancellation confirmation behavior.
-- Preserve optional-field handling, valid false/zero values, timestamp formatting,
-  token redaction, external-text sanitization, refresh, scrolling, and back
-  navigation across supported job types and unknown types.
-- Add TUI regression tests for section boundaries, common and type-specific
-  fields, capability states and reasons, navigation/actions, and narrow terminals.
-- Update relevant user documentation to describe the new job detail organization.
+- Wherever Page Up or Page Down currently performs an action, `Ctrl-U` or `Ctrl-D`
+  performs the corresponding action with the same paging distance and boundaries.
+- Preserve the existing Page Up and Page Down bindings, focus handling, and text
+  entry behavior.
+- Preserve output history loading and follow-mode behavior when paging.
+- Show the aliases in contextual help and relevant user documentation.
+- Add TUI regression tests comparing each alias with its existing page key,
+  including paging boundaries and output follow-mode behavior.
 
-Implemented: Capabilities appears first with the existing `o`, `w`, and `c`
-bindings, states, and reasons. All displayed API-returned job fields appear under
-Job details, including identity and execution settings. Regression tests cover
-section boundaries across job types, unknown/missing capabilities, and unavailable
-actions. Existing output, workflow, and cancellation-confirmation tests pass.
+Implemented and verified offline: `Ctrl-U` and `Ctrl-D` alias Page Up and Page
+Down in output, preserving full-page distance, boundaries, history reads, and
+follow-mode behavior. Help and user documentation include the aliases. Regression
+tests cover aliases, loading/input guards, other screen focus, and help. Modified
+Go files formatted; `go test ./...`, `go vet ./...`, and `git diff --check` passed.
 
-### 2. Display resource details in a responsive table layout
+### 2. Display group membership in host details
 
-Replace the single left-aligned field-per-line presentation with a consistent
-table layout for jobs, job templates, projects, inventories, groups, hosts, and
-workflow nodes. Render field names in bold and in a theme-aware color distinct
-from their values. Align labels and values in separate columns, and place multiple
-label/value pairs side by side when terminal width allows to use horizontal space.
-Apply this layout to the Job details section from milestone 1 while keeping
-Capabilities visually separate.
+When viewing a specific host's details, display a list of the groups it belongs
+to alongside the existing host information. Include direct and inherited
+memberships through parent groups, as requested.
 
 Acceptance criteria:
 
-- Use a shared detail renderer within the existing TUI package and Lip Gloss
-  styling conventions; preserve resource-specific field selection and useful
-  grouping.
-- Wide terminals display multiple label/value pairs per row with consistent
-  spacing and alignment. Narrow terminals fall back to one pair per row and wrap
-  long labels and values without losing field content or exceeding view width.
-- Labels remain bold and visually distinct from values in both light and dark
-  themes. Account for styled text and Unicode display width when aligning cells.
-- Preserve missing/unavailable placeholders, valid false/zero values, safe text
-  handling, scrolling through all wrapped rows, and readable multiline values.
-- Preserve inventory/group menu focus, template jobs table focus, workflow and
-  child navigation, refresh, and back-navigation context after resize or scroll.
-- Add TUI regression tests covering every resource detail view, wide and narrow
-  layouts, label styling, long/multiline values, Unicode, resizing, scrolling, and
-  focus/navigation behavior. Update relevant user documentation.
+- Retrieve the selected host's group membership through the API layer, reusing
+  existing group types, validated requests, and pagination conventions.
+- Display group names in a clearly labeled Groups section in the host detail
+  view. Ensure memberships beyond the first API page can be viewed.
+- Distinguish a host with no groups from loading, unavailable, permission-denied,
+  and failed membership requests; keep existing host details readable.
+- Preserve refresh, scrolling, responsive layout, safe external-text handling,
+  and back-navigation context. Ignore stale results after changing hosts or
+  leaving the detail view.
+- Add API and TUI regression tests for populated and empty memberships,
+  pagination, request failures, refresh, stale results, and narrow terminals.
+- Update relevant user documentation and record the reviewed API contract before
+  deriving fixtures or relying on membership endpoint behavior.
 
-Implemented: resource views share a structured detail table with bold,
-theme-aware colored labels, aligned value columns, and two pairs per row at
-content widths of 120 columns or more. Narrow layouts use one pair per row;
-very small widths stack labels and values. Descriptions and multiline values
-span the table width. Tests cover wrapping, Unicode, false/zero values, themes,
-all resource views, resizing, scrolling, menu/table focus, and real terminal
-rendering. README.md and SPEC.md describe the updated presentation.
-
-Verification: modified Go files formatted with `gofmt -w`; `go test ./...`,
-`go vet ./...`, and `git diff --check` passed. Verification remains offline.
+Implemented and verified offline: host details show visible direct and inherited
+group memberships through `hosts/{id}/all_groups/`, with on-demand `n`/`p` paging
+and `r` refresh. Membership requests run independently of host details and have
+distinct loading, empty, unavailable, permission, authentication, and failure
+states. Request cancellation and identifiers prevent stale results from changing
+another host or screen. The shared detail table retains wrapping and scrolling.
+API and TUI regression tests cover both prefixes, pagination, sanitization,
+failures/recovery, independent reads, cancellation, stale results, resizing, and
+narrow terminals. README.md, SPEC.md, and docs/API_CONTRACT.md are synchronized.
+Modified Go files formatted; `go test ./...`, `go vet ./...`,
+`go test -race ./...`, and `git diff --check` passed. AAP 2.6 remains unverified
+against a deployed instance.
 
 For each implementation milestone: format changed Go files with `gofmt -w`, run
 `go test ./...` and `go vet ./...`, review changes for unintended scope, and update

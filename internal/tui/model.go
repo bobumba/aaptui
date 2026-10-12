@@ -86,6 +86,13 @@ type resultMsg struct {
 	err   error
 }
 type Model struct {
+	hostGroups                   HostGroupsReader
+	hostGroupPage                aap.Page[aap.GroupSummary]
+	hostGroupsKnown              bool
+	hostGroupsLoading            bool
+	hostGroupsErr                error
+	hostGroupsID                 uint64
+	hostGroupsCancel             context.CancelFunc
 	objectDetails                ObjectDetailsReader
 	inventoryDetail              aap.InventoryDetails
 	groupDetail                  aap.GroupDetails
@@ -317,6 +324,7 @@ func (m *Model) move(s screen) {
 	m.objectDetailsFocus = false
 }
 func (m *Model) invalidate() {
+	m.invalidateHostGroups()
 	if m.requestCancel != nil {
 		m.requestCancel()
 	}
@@ -353,6 +361,15 @@ func (m *Model) back() {
 }
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case hostGroupsMsg:
+		if msg.id != m.hostGroupsID || msg.hostID != m.hostDetail.ID || m.screen != hostScreen || m.quitting || m.ctx.Err() != nil {
+			return m, nil
+		}
+		m.hostGroupsLoading = false
+		m.hostGroupsErr = msg.err
+		if msg.err == nil {
+			m.hostGroupPage, m.hostGroupsKnown = msg.page, true
+		}
 	case runningJobsMsg:
 		if m.quitting || m.ctx.Err() != nil {
 			return m, nil
@@ -664,6 +681,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.loadNodes(aap.PageCursor{})
 			}
 		case "n":
+			if m.screen == hostScreen && !m.hostGroupsLoading && m.hostGroupPage.Next.Present() {
+				return m, m.loadHostGroups(m.hostGroupPage.Next)
+			}
 			if m.hasTemplateJobs() && m.templateJobPage.Next.Present() {
 				return m, m.loadTemplateJobs(m.templateJobPage.Next)
 			}
@@ -683,6 +703,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.loadNodes(m.nodePage.Next)
 			}
 		case "p":
+			if m.screen == hostScreen && !m.hostGroupsLoading && m.hostGroupPage.Previous.Present() {
+				return m, m.loadHostGroups(m.hostGroupPage.Previous)
+			}
 			if m.hasTemplateJobs() && m.templateJobPage.Previous.Present() {
 				return m, m.loadTemplateJobs(m.templateJobPage.Previous)
 			}
@@ -709,14 +732,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.screen == outputScreen {
 				m.outputLeft = min(aap.OutputBytes, m.outputLeft+8)
 			}
-		case "pgup", "pgdown":
+		case "pgup", "pgdown", "ctrl+u", "ctrl+d":
 			if m.screen == outputScreen && !m.loading {
 				if m.following {
 					m.outputTop = m.visibleOutputStart()
 				}
 				m.following = false
 				delta := m.outputLines()
-				if key == "pgup" {
+				if key == "pgup" || key == "ctrl+u" {
 					delta = -delta
 				}
 				m.outputTop = max(0, min(max(m.outputUpdate.Chunk.AbsoluteEnd-1, 0), m.outputTop+delta))

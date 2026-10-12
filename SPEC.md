@@ -133,8 +133,13 @@ Unicode display widths, and keep every wrapped row accessible through scrolling.
 Resizing and scrolling preserve existing menu/table focus and navigation context.
 
 Inventory/group screens retain their navigation menus; Tab switches menu/details
-focus. Hosts have scrollable detail views. Workflow nodes, including pending and
-skipped nodes, have inspectable details through `d`, with existing Enter child-job
+focus. Hosts have scrollable detail views with a Groups section listing visible
+direct and inherited memberships, including parent groups. Use `n`/`p` to page
+groups on demand and `r` to refresh details and memberships. Membership requests
+run independently of host detail requests; loading, empty, unavailable, permission,
+and failure states remain distinct, and stale responses are ignored. Workflow
+nodes, including pending and skipped nodes, have inspectable details through `d`,
+with existing Enter child-job
 navigation retained. Detail requests are asynchronous and cancellable, and Esc
 restores prior selection, search, page, and detail context.
 
@@ -155,6 +160,9 @@ Main
 
 The user must be able to return to the previous screen
 and quit the application using consistent key bindings.
+
+Output paging accepts Ctrl-U and Ctrl-D as aliases for Page Up and Page Down,
+respectively, with the same paging distance and follow-mode behavior.
 
 ## AAP API
 

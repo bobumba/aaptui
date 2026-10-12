@@ -181,6 +181,7 @@ func (m *Model) details(width int) []string {
 		fields.number("Last job ID", d.LastJob)
 		fields.number("Last job host summary ID", d.LastJobHostSummary)
 		fields.field("Facts modified", jobTimestamp(d.FactsModified))
+		fields = append(fields, m.hostGroupFields()...)
 	case nodeScreen:
 		d := m.nodeDetail
 		fields.field("ID", strconv.Itoa(d.ID))

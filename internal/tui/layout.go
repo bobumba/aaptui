@@ -221,7 +221,7 @@ func (m *Model) screenHelp(width int) []string {
 	case hostsScreen:
 		lines = []string{"↑/↓ select · Enter details · / search · r refresh · n/p page", back}
 	case hostScreen:
-		lines = []string{"↑/↓ scroll · r refresh", back}
+		lines = []string{"↑/↓ scroll · r refresh · n/p groups page", back}
 	case nodeScreen:
 		lines = []string{"↑/↓ scroll · Enter child job", back}
 	case templateScreen:
@@ -231,7 +231,7 @@ func (m *Model) screenHelp(width int) []string {
 	case workflowScreen:
 		lines = []string{"↑/↓ select · d node details · Enter child · r refresh · n/p page", back}
 	case outputScreen:
-		lines = []string{"↑/↓ PgUp/PgDown scroll · ←/→ pan · f follow · r resume", back}
+		lines = []string{"↑/↓ scroll · PgUp/Ctrl-U PgDown/Ctrl-D page · ←/→ pan · f follow · r resume", back}
 	}
 	if width < 60 {
 		switch m.screen {
@@ -243,6 +243,8 @@ func (m *Model) screenHelp(width int) []string {
 			lines = []string{"↑/↓ select · Enter open", "/ search · r refresh · n/p page", back}
 		case hostsScreen:
 			lines = []string{"↑/↓ select · Enter details", "/ search · r refresh · n/p page", back}
+		case hostScreen:
+			lines = []string{"↑/↓ scroll · r refresh", "n/p groups page", back}
 		case templateScreen:
 			lines = []string{"↑/↓ scroll", back}
 		case jobScreen:
@@ -250,7 +252,7 @@ func (m *Model) screenHelp(width int) []string {
 		case workflowScreen:
 			lines = []string{"↑/↓ select · d node details", "Enter child · r refresh · n/p page", back}
 		case outputScreen:
-			lines = []string{"↑/↓ PgUp/PgDown scroll", "←/→ pan · f follow · r resume", back}
+			lines = []string{"PgUp/PgDown Ctrl-U/Ctrl-D page", "←/→ pan · f follow · r resume", back}
 		}
 	}
 	if m.hasTemplateJobs() {
