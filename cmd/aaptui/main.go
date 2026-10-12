@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	tea "charm.land/bubbletea/v2"
@@ -42,6 +43,9 @@ func runWithArgs(args []string) (resultErr error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	connection := fmt.Sprintf("%s · TLS verification: %t", s.Mode, s.TLSVerify)
+	if strings.HasPrefix(strings.ToLower(s.URL), "http://") {
+		connection = fmt.Sprintf("%s · HTTP · TLS verification: not applicable", s.Mode)
+	}
 	client, err := aap.NewClient(s, secrets.Token(), nil)
 	if err != nil {
 		return err

@@ -59,11 +59,13 @@ values). Empty required values, invalid modes/booleans, unknown JSON fields, tok
 fields, null values, and configuration files larger than 64 KiB are rejected.
 
 `gateway` uses `/api/controller/v2/`; `direct` uses `/api/v2/`. Direct token
-acceptance depends on the deployment. URLs must be HTTPS origins without paths,
-credentials, queries, or fragments. System certificate trust is used. Setting
-`AAP_TLS_VERIFY=false` disables verification and is shown in the connection banner.
-HTTP, custom CA bundles, client certificates, and proxy path prefixes are outside
-scope. Authenticated redirects and foreign API links are rejected.
+acceptance depends on the deployment. URLs must be HTTP or HTTPS origins without
+paths, credentials, queries, or fragments. For example, set
+`AAP_URL=http://localhost:8080` to connect over HTTP. HTTPS uses system certificate
+trust; `AAP_TLS_VERIFY=false` disables certificate verification and is shown in
+the connection banner. TLS settings do not apply to HTTP connections, which the
+banner identifies as HTTP. Custom CA bundles, client certificates, and proxy path
+prefixes are outside scope. Authenticated redirects and foreign API links are rejected.
 
 ### Authentication troubleshooting
 

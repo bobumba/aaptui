@@ -41,8 +41,8 @@ type fileSettings struct {
 
 func Validate(s Settings) error {
 	u, err := url.Parse(s.URL)
-	if err != nil || u == nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" || u.Opaque != "" || (u.Path != "" && u.Path != "/") || strings.Contains(s.URL, "#") {
-		return fmt.Errorf("server URL must be an HTTPS origin without credentials, query, fragment, or path")
+	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" || u.Opaque != "" || (u.Path != "" && u.Path != "/") || strings.Contains(s.URL, "#") {
+		return fmt.Errorf("server URL must be an HTTP or HTTPS origin without credentials, query, fragment, or path")
 	}
 	if s.Mode != Gateway && s.Mode != Direct {
 		return fmt.Errorf("connection mode must be gateway or direct")

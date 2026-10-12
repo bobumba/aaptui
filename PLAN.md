@@ -26,9 +26,10 @@ when implementation is requested.
   permissions, following an explicit confirmation in the TUI.
 - Keep output memory bounded. Fetch older output ranges on demand and use
   temporary cache files under the user's home directory when useful.
-- Require HTTPS. Do not add private CA configuration, client certificates,
-  reverse-proxy path prefixes, or plain HTTP support. Use system certificate
+- Support HTTP and HTTPS origins. Do not add private CA configuration, client
+  certificates, or reverse-proxy path prefixes. For HTTPS, use system certificate
   trust; retain the specified TLS-verification setting, enabled by default.
+  TLS verification does not apply to HTTP connections.
 - No AAP instance will be available. Offline tests and source review are the
   available verification methods; actual AAP 2.6 compatibility remains unverified.
 
@@ -107,11 +108,12 @@ explicit `false` is not treated as missing. An absent default file is acceptable
 a missing explicitly selected file or malformed file is an error. Reject unknown
 configuration fields, including token fields. Reject empty required values,
 invalid booleans/modes, URL credentials, query strings, fragments, and unsupported
-schemes or non-root URL paths.
+schemes (anything other than HTTP or HTTPS) or non-root URL paths.
 
 Keep the token separate from printable settings, never persist it or accept it
 as an argument, and redact it from error text. Display the connection mode and
-whether TLS verification is disabled without displaying credentials.
+whether TLS verification is disabled without displaying credentials. Identify
+HTTP connections and show that TLS verification is not applicable.
 
 ## API behavior and Go types
 

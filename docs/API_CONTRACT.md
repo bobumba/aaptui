@@ -102,7 +102,9 @@ text exceeding 256 KiB explicitly. Ranged output remains preferred where exposed
 
 ## Security and offline acceptance
 
-HTTPS with system trust by default; explicit TLS verification disable is visible.
+HTTP and HTTPS origins are supported. HTTPS uses system trust by default;
+explicit TLS verification disable is visible. HTTP connections are identified
+in the banner, with TLS verification shown as not applicable.
 Only same-origin, normalized paths in the selected controller prefix are allowed;
 collection cursors must remain on the original collection. Redirects are rejected.
 Bodies, decoded pages, output chunks, RAM, disk, and pending messages are bounded.

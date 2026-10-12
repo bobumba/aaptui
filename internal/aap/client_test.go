@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -46,6 +47,47 @@ func TestTransport(t *testing.T) {
 		})
 	}
 }
+
+func TestHTTPTransport(t *testing.T) {
+	for _, mode := range []config.ConnectionMode{config.Gateway, config.Direct} {
+		t.Run(string(mode), func(t *testing.T) {
+			prefix := "/api/controller/v2/"
+			if mode == config.Direct {
+				prefix = "/api/v2/"
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != prefix+"unified_jobs/" || r.Header.Get("Authorization") != "Bearer secret" || r.TLS != nil {
+					t.Error("unexpected HTTP request", r.URL)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				next := ""
+				if r.URL.Query().Get("page") != "2" {
+					next = "http://" + r.Host + prefix + "unified_jobs/?page=2"
+				}
+				if _, err := fmt.Fprintf(w, `{"count":2,"results":[{}],"next":%q}`, next); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+			c, err := NewClient(config.Settings{URL: server.URL, Mode: mode, TLSVerify: true}, "secret", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			page, err := readPage[struct{}](context.Background(), c, "unified_jobs/", ListOptions{})
+			if err != nil || page.Count != 2 || len(page.Items) != 1 || !page.Next.Present() {
+				t.Fatal(page, err)
+			}
+			page, err = readPage[struct{}](context.Background(), c, "unified_jobs/", ListOptions{Cursor: page.Next})
+			if err != nil || page.Count != 2 || len(page.Items) != 1 || page.Next.Present() {
+				t.Fatal(page, err)
+			}
+			if _, err := c.safeLink(strings.Replace(server.URL, "http://", "https://", 1) + prefix + "unified_jobs/"); err == nil {
+				t.Fatal("API link with a different scheme accepted")
+			}
+		})
+	}
+}
+
 func TestErrorsAndBounds(t *testing.T) {
 	for _, test := range []struct {
 		code int

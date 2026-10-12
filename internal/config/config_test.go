@@ -65,13 +65,49 @@ func TestDiscovery(t *testing.T) {
 	}
 }
 func TestValidate(t *testing.T) {
-	for _, u := range []string{"", "http://x", "https://user:secret@x", "https://x/path", "https://x?secret", "https://x#secret", "https://x?", "https://x#", "https:///"} {
+	for _, scheme := range []string{"http", "https"} {
+		for _, origin := range []string{"example.org", "example.org/", "localhost:8080", "[::1]:8080/"} {
+			u := scheme + "://" + origin
+			if err := Validate(Settings{URL: u, Mode: Gateway}); err != nil {
+				t.Errorf("rejected %s: %v", u, err)
+			}
+		}
+		for _, invalid := range []string{"user:secret@x", "x/path", "x?secret", "x#secret", "x?", "x#", "/"} {
+			u := scheme + "://" + invalid
+			if Validate(Settings{URL: u, Mode: Gateway}) == nil {
+				t.Errorf("accepted %s", u)
+			}
+		}
+	}
+	for _, u := range []string{"", "ftp://x", "file://x", "x", "://x"} {
 		if Validate(Settings{URL: u, Mode: Gateway}) == nil {
 			t.Errorf("accepted %s", u)
 		}
 	}
 	if Validate(Settings{URL: "https://x", Mode: "other"}) == nil {
 		t.Fatal("invalid mode")
+	}
+}
+
+func TestLoadHTTP(t *testing.T) {
+	for _, source := range []string{"file", "environment"} {
+		t.Run(source, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			env := map[string]string{"AAP_TOKEN": "secret"}
+			body := `{"url":"http://localhost:8080"}`
+			if source == "environment" {
+				body = `{"url":"https://file.example"}`
+				env["AAP_URL"] = "http://localhost:8080"
+			}
+			if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+			s, secrets, err := load(path, lookup, os.UserHomeDir, os.Open)
+			if err != nil || s.URL != "http://localhost:8080" || s.Mode != Gateway || !s.TLSVerify || secrets.Token() != "secret" {
+				t.Fatalf("settings=%+v err=%v", s, err)
+			}
+		})
 	}
 }
 func TestInvalidEnvironmentAndOversizeFile(t *testing.T) {
