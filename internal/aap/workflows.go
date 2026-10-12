@@ -6,20 +6,32 @@ import (
 )
 
 type WorkflowNode struct {
-	ID               int
-	Identifier, Name string
-	Status           JobStatus
-	Job              *JobRef
-	Skipped          bool
-	Reason           string
+	Metadata                                ResourceMetadata
+	WorkflowJob, Template                   *ResourceReference
+	SuccessNodes, FailureNodes, AlwaysNodes []int
+	AllParentsMustConverge, DoNotRun        *bool
+	ID                                      int
+	Identifier, Name                        string
+	Status                                  JobStatus
+	Job                                     *JobRef
+	Skipped                                 bool
+	Reason                                  string
 }
 type wireNode struct {
-	ID         int               `json:"id"`
-	Identifier string            `json:"identifier"`
-	Job        *int              `json:"job"`
-	DoNotRun   bool              `json:"do_not_run"`
-	Related    map[string]string `json:"related"`
-	Summary    struct {
+	wireDetails
+	WorkflowJob            *int              `json:"workflow_job"`
+	Template               *int              `json:"unified_job_template"`
+	SuccessNodes           []int             `json:"success_nodes"`
+	FailureNodes           []int             `json:"failure_nodes"`
+	AlwaysNodes            []int             `json:"always_nodes"`
+	AllParentsMustConverge *bool             `json:"all_parents_must_converge"`
+	ID                     int               `json:"id"`
+	Identifier             string            `json:"identifier"`
+	Job                    *int              `json:"job"`
+	DoNotRun               *bool             `json:"do_not_run"`
+	Related                map[string]string `json:"related"`
+	Summary                struct {
+		wireSummary
 		Job *struct {
 			ID     int    `json:"id"`
 			Type   string `json:"type"`
@@ -43,8 +55,12 @@ func (c *Client) WorkflowNodes(ctx context.Context, ref JobRef, o ListOptions) (
 		if w.ID <= 0 {
 			return Page[WorkflowNode]{}, apiError(Malformed, "read workflow children")
 		}
-		n := WorkflowNode{ID: w.ID, Identifier: c.cleanLabel(w.Identifier), Skipped: w.DoNotRun, Status: "pending"}
-		if w.DoNotRun {
+		w.wireDetails.Summary = w.Summary.wireSummary
+		n := WorkflowNode{ID: w.ID, Identifier: c.cleanLabel(w.Identifier), Skipped: w.DoNotRun != nil && *w.DoNotRun, Status: "pending",
+			Metadata: c.metadata(w.wireDetails), WorkflowJob: c.reference(w.WorkflowJob, nil), Template: c.reference(w.Template, w.Summary.UnifiedJobTemplate),
+			SuccessNodes: w.SuccessNodes, FailureNodes: w.FailureNodes, AlwaysNodes: w.AlwaysNodes,
+			AllParentsMustConverge: w.AllParentsMustConverge, DoNotRun: w.DoNotRun}
+		if n.Skipped {
 			n.Status = "skipped"
 			n.Reason = "Node was skipped"
 		}
@@ -75,7 +91,7 @@ func (c *Client) WorkflowNodes(ctx context.Context, ref JobRef, o ListOptions) (
 					return Page[WorkflowNode]{}, apiError(Malformed, "read workflow children")
 				}
 			}
-		} else if !w.DoNotRun {
+		} else if !n.Skipped {
 			n.Reason = "Node has no launched child job"
 		}
 		out.Items = append(out.Items, n)

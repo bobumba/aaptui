@@ -29,6 +29,8 @@ const (
 	groupsScreen
 	groupScreen
 	hostsScreen
+	hostScreen
+	nodeScreen
 )
 
 type Canceller interface {
@@ -56,20 +58,27 @@ type ProjectReader interface {
 	Template(context.Context, aap.TemplateRef) (aap.TemplateDetails, error)
 }
 type frame struct {
-	inventory   aap.InventorySummary
-	group       aap.GroupSummary
-	groups      aap.Page[aap.GroupSummary]
-	hosts       aap.Page[aap.HostSummary]
-	inventories aap.Page[aap.InventorySummary]
-	detailTop   int
-	job         aap.JobDetails
-	nodes       aap.Page[aap.WorkflowNode]
-	jobs        aap.Page[aap.JobSummary]
-	templates   aap.Page[aap.TemplateSummary]
-	template    aap.TemplateDetails
-	screen      screen
-	selected    int
-	search      string
+	inventoryDetail    aap.InventoryDetails
+	groupDetail        aap.GroupDetails
+	hostDetail         aap.HostDetails
+	nodeDetail         aap.WorkflowNode
+	objectDetailsFocus bool
+	templateJobs       aap.Page[aap.JobSummary]
+	templateJobsFocus  bool
+	inventory          aap.InventorySummary
+	group              aap.GroupSummary
+	groups             aap.Page[aap.GroupSummary]
+	hosts              aap.Page[aap.HostSummary]
+	inventories        aap.Page[aap.InventorySummary]
+	detailTop          int
+	job                aap.JobDetails
+	nodes              aap.Page[aap.WorkflowNode]
+	jobs               aap.Page[aap.JobSummary]
+	templates          aap.Page[aap.TemplateSummary]
+	template           aap.TemplateDetails
+	screen             screen
+	selected           int
+	search             string
 }
 type resultMsg struct {
 	id    uint64
@@ -77,46 +86,64 @@ type resultMsg struct {
 	err   error
 }
 type Model struct {
-	inventoryContents          InventoryContentsReader
-	inventory                  aap.InventorySummary
-	group                      aap.GroupSummary
-	groupPage                  aap.Page[aap.GroupSummary]
-	hostPage                   aap.Page[aap.HostSummary]
-	inventories                InventoryReader
-	inventoryPage              aap.Page[aap.InventorySummary]
-	styles                     styles
-	detailTop, outputLeft      int
-	canceller                  Canceller
-	confirming                 bool
-	confirmation               aap.JobRef
-	outputID                   uint64
-	outputPending, following   bool
-	openOutput                 func(context.Context, aap.JobRef) OutputSession
-	output                     OutputSession
-	sessions                   []OutputSession
-	outputUpdate               aap.OutputUpdate
-	outputTop                  int
-	cleanupErr                 error
-	workflows                  WorkflowReader
-	nodePage                   aap.Page[aap.WorkflowNode]
-	jobs                       JobReader
-	jobPage                    aap.Page[aap.JobSummary]
-	jobDetail                  aap.JobDetails
-	templates                  TemplateReader
-	projects                   ProjectReader
-	templatePage               aap.Page[aap.TemplateSummary]
-	templateDetail             aap.TemplateDetails
-	ctx                        context.Context
-	cancel                     context.CancelFunc
-	requestCancel              context.CancelFunc
-	generation                 uint64
-	screen                     screen
-	stack                      []frame
-	selected, width, height    int
-	search                     string
-	editing, loading, quitting bool
-	err                        error
-	connection                 string
+	objectDetails                ObjectDetailsReader
+	inventoryDetail              aap.InventoryDetails
+	groupDetail                  aap.GroupDetails
+	hostDetail                   aap.HostDetails
+	nodeDetail                   aap.WorkflowNode
+	objectDetailsFocus           bool
+	runningJobs                  RunningJobsPoller
+	runningPending, runningKnown bool
+	runningCount                 int
+	runningErr                   error
+	templateJobs                 TemplateJobsReader
+	templateJobPage              aap.Page[aap.JobSummary]
+	templateJobsFocus            bool
+	serverURL                    string
+	userReader                   UserReader
+	user                         aap.User
+	userLoading                  bool
+	userErr                      error
+	inventoryContents            InventoryContentsReader
+	inventory                    aap.InventorySummary
+	group                        aap.GroupSummary
+	groupPage                    aap.Page[aap.GroupSummary]
+	hostPage                     aap.Page[aap.HostSummary]
+	inventories                  InventoryReader
+	inventoryPage                aap.Page[aap.InventorySummary]
+	styles                       styles
+	detailTop, outputLeft        int
+	canceller                    Canceller
+	confirming                   bool
+	confirmation                 aap.JobRef
+	outputID                     uint64
+	outputPending, following     bool
+	openOutput                   func(context.Context, aap.JobRef) OutputSession
+	output                       OutputSession
+	sessions                     []OutputSession
+	outputUpdate                 aap.OutputUpdate
+	outputTop                    int
+	cleanupErr                   error
+	workflows                    WorkflowReader
+	nodePage                     aap.Page[aap.WorkflowNode]
+	jobs                         JobReader
+	jobPage                      aap.Page[aap.JobSummary]
+	jobDetail                    aap.JobDetails
+	templates                    TemplateReader
+	projects                     ProjectReader
+	templatePage                 aap.Page[aap.TemplateSummary]
+	templateDetail               aap.TemplateDetails
+	ctx                          context.Context
+	cancel                       context.CancelFunc
+	requestCancel                context.CancelFunc
+	generation                   uint64
+	screen                       screen
+	stack                        []frame
+	selected, width, height      int
+	search                       string
+	editing, loading, quitting   bool
+	err                          error
+	connection                   string
 }
 
 func New(ctx context.Context, connection string) *Model {
@@ -160,6 +187,12 @@ func (m *Model) loadJob(ref aap.JobRef) tea.Cmd {
 	if m.jobDetail.Ref != ref {
 		summary := aap.JobSummary{Ref: ref}
 		for _, job := range m.jobPage.Items {
+			if job.Ref == ref {
+				summary = job
+				break
+			}
+		}
+		for _, job := range m.templateJobPage.Items {
 			if job.Ref == ref {
 				summary = job
 				break
@@ -234,7 +267,9 @@ type cleanupMsg struct {
 }
 
 func (m *Model) WithCancellation(c Canceller) *Model { m.canceller = c; return m }
-func (m *Model) Init() tea.Cmd                       { return tea.RequestBackgroundColor }
+func (m *Model) Init() tea.Cmd {
+	return tea.Batch(tea.RequestBackgroundColor, m.loadUser(), m.nextRunningJobs())
+}
 func (m *Model) Close() error {
 	m.cancel()
 	if m.requestCancel != nil {
@@ -265,17 +300,21 @@ func (m *Model) begin(work func(context.Context) (any, error)) tea.Cmd {
 }
 func (m *Model) move(s screen) {
 	m.stack = append(m.stack, frame{
+		templateJobs: m.templateJobPage, templateJobsFocus: m.templateJobsFocus,
 		screen: m.screen, selected: m.selected, search: m.search, detailTop: m.detailTop,
 		job: m.jobDetail, nodes: m.nodePage, jobs: m.jobPage,
 		templates: m.templatePage, template: m.templateDetail,
 		inventories: m.inventoryPage, inventory: m.inventory,
 		group: m.group, groups: m.groupPage, hosts: m.hostPage,
+		inventoryDetail: m.inventoryDetail, groupDetail: m.groupDetail, hostDetail: m.hostDetail,
+		nodeDetail: m.nodeDetail, objectDetailsFocus: m.objectDetailsFocus,
 	})
 	m.invalidate()
 	m.screen = s
 	m.selected = 0
 	m.search = ""
 	m.detailTop = 0
+	m.objectDetailsFocus = false
 }
 func (m *Model) invalidate() {
 	if m.requestCancel != nil {
@@ -301,15 +340,38 @@ func (m *Model) back() {
 		m.jobPage = f.jobs
 		m.templatePage = f.templates
 		m.templateDetail = f.template
+		m.templateJobPage = f.templateJobs
+		m.templateJobsFocus = f.templateJobsFocus
 		m.inventoryPage = f.inventories
 		m.inventory = f.inventory
 		m.group = f.group
 		m.groupPage = f.groups
 		m.hostPage = f.hosts
+		m.inventoryDetail, m.groupDetail, m.hostDetail = f.inventoryDetail, f.groupDetail, f.hostDetail
+		m.nodeDetail, m.objectDetailsFocus = f.nodeDetail, f.objectDetailsFocus
 	}
 }
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case runningJobsMsg:
+		if m.quitting || m.ctx.Err() != nil {
+			return m, nil
+		}
+		m.runningPending = false
+		m.runningErr = msg.err
+		if msg.err != nil {
+			return m, nil
+		}
+		m.runningErr = msg.update.Err
+		if msg.update.Err == nil {
+			m.runningCount, m.runningKnown = msg.update.Count, true
+		}
+		return m, m.nextRunningJobs()
+	case userMsg:
+		if !m.quitting && m.ctx.Err() == nil {
+			m.userLoading = false
+			m.user, m.userErr = msg.user, msg.err
+		}
 	case tea.BackgroundColorMsg:
 		m.styles = newStyles(msg.IsDark())
 	case liveMsg:
@@ -368,6 +430,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err == nil {
 			switch v := msg.value.(type) {
+			case templateJobsMsg:
+				m.templateJobPage = v.page
+				m.selected = 0
+				return m, tea.ClearScreen
 			case aap.Page[aap.GroupSummary]:
 				m.groupPage = v
 				m.selected = 0
@@ -390,6 +456,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.jobPage = v
 				m.selected = 0
 				return m, tea.ClearScreen
+			case aap.InventoryDetails:
+				m.inventoryDetail, m.inventory = v, v.InventorySummary
+			case aap.GroupDetails:
+				m.groupDetail, m.group = v, v.GroupSummary
+			case aap.HostDetails:
+				m.hostDetail = v
 			case aap.JobDetails:
 				m.jobDetail = v
 			case aap.Page[aap.WorkflowNode]:
@@ -409,6 +481,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.outputTop = v.Chunk.Start
 			case aap.TemplateDetails:
 				m.templateDetail = v
+				if m.hasTemplateJobs() {
+					return m, m.loadTemplateJobs(aap.PageCursor{})
+				}
 			}
 		}
 	case tea.KeyPressMsg:
@@ -474,6 +549,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch key {
+		case "tab":
+			if m.screen == inventoryScreen || m.screen == groupScreen {
+				m.objectDetailsFocus = !m.objectDetailsFocus
+			}
+			if m.hasTemplateJobs() {
+				m.templateJobsFocus = !m.templateJobsFocus
+			}
 		case "q":
 			m.quitting = true
 			m.cancel()
@@ -494,7 +576,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.editing = true
 			}
 		case "up", "k":
-			if m.screen == jobScreen || m.screen == templateScreen {
+			if m.scrollingDetails() {
 				m.detailTop = max(0, m.detailTop-1)
 				return m, nil
 			}
@@ -514,6 +596,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.readOutput(start), m.nextOutput())
 			}
 		case "r":
+			if m.screen == inventoryScreen || m.screen == groupScreen || m.screen == hostScreen {
+				return m, m.loadObjectDetails()
+			}
+			if m.hasTemplateJobs() {
+				if m.loading {
+					return m, nil
+				}
+				return m, m.loadTemplateJobs(aap.PageCursor{})
+			}
 			if m.inventoryList() {
 				return m, m.loadInventoryList(aap.PageCursor{})
 			}
@@ -534,6 +625,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.screen == workflowScreen {
 				return m, m.loadNodes(aap.PageCursor{})
+			}
+		case "d":
+			if m.screen == workflowScreen && !m.loading && m.selected < len(m.nodePage.Items) {
+				node := m.nodePage.Items[m.selected]
+				m.move(nodeScreen)
+				m.nodeDetail = node
 			}
 		case "c":
 			if m.screen == jobScreen && !m.loading && m.canceller != nil {
@@ -567,6 +664,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.loadNodes(aap.PageCursor{})
 			}
 		case "n":
+			if m.hasTemplateJobs() && m.templateJobPage.Next.Present() {
+				return m, m.loadTemplateJobs(m.templateJobPage.Next)
+			}
 			if m.inventoryList() && m.inventoryCursor(true).Present() {
 				return m, m.loadInventoryList(m.inventoryCursor(true))
 			}
@@ -583,6 +683,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.loadNodes(m.nodePage.Next)
 			}
 		case "p":
+			if m.hasTemplateJobs() && m.templateJobPage.Previous.Present() {
+				return m, m.loadTemplateJobs(m.templateJobPage.Previous)
+			}
 			if m.inventoryList() && m.inventoryCursor(false).Present() {
 				return m, m.loadInventoryList(m.inventoryCursor(false))
 			}
@@ -620,7 +723,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.readOutput(m.outputTop)
 			}
 		case "down", "j":
-			if m.screen == jobScreen || m.screen == templateScreen {
+			if m.scrollingDetails() {
 				m.detailTop = min(1024*1024, m.detailTop+1)
 				return m, nil
 			}
@@ -640,6 +743,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.screen == jobsScreen {
 				m.selected = min(max(len(m.jobPage.Items)-1, 0), m.selected+1)
 			}
+			if m.hasTemplateJobs() {
+				m.selected = min(max(len(m.templateJobPage.Items)-1, 0), m.selected+1)
+			}
 			if m.screen == inventoriesScreen {
 				m.selected = min(max(len(m.inventoryPage.Items)-1, 0), m.selected+1)
 			}
@@ -656,20 +762,38 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = min(max(len(m.nodePage.Items)-1, 0), m.selected+1)
 			}
 		case "enter":
+			if m.screen == nodeScreen && m.nodeDetail.Job != nil && !m.loading {
+				ref := *m.nodeDetail.Job
+				m.move(jobScreen)
+				return m, m.loadJob(ref)
+			}
+			if m.screen == hostsScreen && !m.loading && m.selected < len(m.hostPage.Items) {
+				host := m.hostPage.Items[m.selected]
+				m.move(hostScreen)
+				m.hostDetail = aap.HostDetails{HostSummary: host, Inventory: &aap.ResourceReference{ID: host.InventoryID}}
+				return m, m.loadObjectDetails()
+			}
+			if m.hasTemplateJobs() && m.templateJobsFocus && !m.loading && m.selected < len(m.templateJobPage.Items) {
+				ref := m.templateJobPage.Items[m.selected].Ref
+				m.move(jobScreen)
+				return m, m.loadJob(ref)
+			}
 			if m.screen == inventoriesScreen && !m.loading && m.selected < len(m.inventoryPage.Items) {
 				inventory := m.inventoryPage.Items[m.selected]
 				m.move(inventoryScreen)
 				m.inventory = inventory
 				m.group = aap.GroupSummary{}
-				return m, nil
+				m.inventoryDetail = aap.InventoryDetails{InventorySummary: inventory}
+				return m, m.loadObjectDetails()
 			}
 			if m.screen == groupsScreen && !m.loading && m.selected < len(m.groupPage.Items) {
 				group := m.groupPage.Items[m.selected]
 				m.move(groupScreen)
 				m.group = group
-				return m, nil
+				m.groupDetail = aap.GroupDetails{GroupSummary: group, Inventory: &aap.ResourceReference{ID: group.InventoryID}}
+				return m, m.loadObjectDetails()
 			}
-			if (m.screen == inventoryScreen || m.screen == groupScreen) && m.inventoryContents != nil {
+			if (m.screen == inventoryScreen || m.screen == groupScreen) && !m.objectDetailsFocus && !m.loading && m.inventoryContents != nil {
 				s := groupsScreen
 				if m.selected == 1 {
 					s = hostsScreen
@@ -708,6 +832,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ref := summary.Ref
 				m.move(templateScreen)
 				m.templateDetail = aap.TemplateDetails{TemplateSummary: summary}
+				m.templateJobPage = aap.Page[aap.JobSummary]{}
+				m.templateJobsFocus = true
 				return m, m.begin(func(ctx context.Context) (any, error) { return m.templates.Template(ctx, ref) })
 			} else if m.screen == jobsScreen && !m.loading && m.selected < len(m.jobPage.Items) {
 				ref := m.jobPage.Items[m.selected].Ref

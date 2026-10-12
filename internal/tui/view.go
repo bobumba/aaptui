@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -67,13 +66,7 @@ func (m *Model) body(width, height int) []string {
 			lines = []string{m.emptyState("inventories")}
 		}
 	case inventoryScreen, groupScreen:
-		labels := []string{"Groups", "Hosts"}
-		if m.screen == groupScreen {
-			labels = []string{"Child groups", "Hosts (including descendants)"}
-		}
-		for i := start; i < min(len(labels), start+rows); i++ {
-			lines = append(lines, m.selectRow(labels[i], i == m.selected, width))
-		}
+		return m.inventoryDetailsBody(width, height)
 	case groupsScreen:
 		for i := start; i < min(len(m.groupPage.Items), start+rows); i++ {
 			v := m.groupPage.Items[i]
@@ -98,13 +91,7 @@ func (m *Model) body(width, height int) []string {
 			lines = []string{m.emptyState("hosts")}
 		}
 	case jobsScreen:
-		for i := start; i < min(len(m.jobPage.Items), start+rows); i++ {
-			v := m.jobPage.Items[i]
-			lines = append(lines, m.resourceRow(strconv.Itoa(v.Ref.ID), v.Name, string(v.Ref.Type), string(v.Status), i == m.selected, width))
-		}
-		if len(m.jobPage.Items) == 0 {
-			lines = []string{m.emptyState("jobs")}
-		}
+		return m.jobsBody(width, height)
 	case workflowScreen:
 		for i := start; i < min(len(m.nodePage.Items), start+rows); i++ {
 			v := m.nodePage.Items[i]
@@ -113,8 +100,11 @@ func (m *Model) body(width, height int) []string {
 		if len(m.nodePage.Items) == 0 {
 			lines = []string{m.emptyState("workflow nodes")}
 		}
-	case templateScreen, jobScreen:
-		lines = strings.Split(ansi.Hardwrap(strings.Join(m.details(), "\n"), width, true), "\n")
+	case templateScreen, jobScreen, hostScreen, nodeScreen:
+		if m.hasTemplateJobs() {
+			return m.templateJobsBody(width, height)
+		}
+		lines = m.details(width)
 		top := min(m.detailTop, max(0, len(lines)-height))
 		lines = lines[top:]
 	case outputScreen:
@@ -179,6 +169,10 @@ func (m *Model) columns(width int) columns {
 }
 
 func (m *Model) columnHeader(width int) string {
+	if m.screen == jobsScreen && width >= 120 {
+		c := m.columns(width - 2*(jobTimestampWidth+1))
+		return m.styles.muted.Render("  " + c.render("ID", "NAME", "TYPE", "STATUS") + " " + cell("STARTED (UTC)", jobTimestampWidth) + " " + cell("FINISHED (UTC)", jobTimestampWidth))
+	}
 	kind := "TYPE"
 	if m.screen == workflowScreen {
 		kind = "REASON"
@@ -214,72 +208,4 @@ func cell(text string, width int) string {
 
 func singleLine(text string) string {
 	return strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(text)
-}
-
-func (m *Model) details() []string {
-	var lines []string
-	field := func(label, value string) {
-		lines = append(lines, m.styles.muted.Render(label+": ")+value)
-	}
-	if m.screen == templateScreen {
-		d := m.templateDetail
-		lines = append(lines, m.styles.key.Render(fmt.Sprintf("%d · %s · %s", d.Ref.ID, d.Name, d.Ref.Type)), d.Description, "")
-		field("Status", m.styles.status(d.Status))
-		if d.Playbook != nil {
-			field("Playbook", d.Playbook.Playbook)
-			field("Job type", d.Playbook.JobType)
-			field("Limit", d.Playbook.Limit)
-		}
-		if d.Project != nil {
-			field("SCM", d.Project.SCMType)
-			field("URL", d.Project.SCMURL)
-			field("Branch", d.Project.SCMBranch)
-		}
-		if d.Inventory != nil {
-			field("Source", d.Inventory.Source)
-			field("Path", d.Inventory.SourcePath)
-		}
-		if d.SystemJobType != "" {
-			field("System job", d.SystemJobType)
-		}
-		if d.ApprovalTimeout != nil {
-			field("Approval timeout", fmt.Sprint(*d.ApprovalTimeout))
-		}
-		return lines
-	}
-	d := m.jobDetail
-	lines = append(lines, m.styles.key.Render(fmt.Sprintf("%d · %s · %s", d.Ref.ID, d.Name, d.Ref.Type)), d.Description, "")
-	field("Status", m.styles.status(string(d.Status))+fmt.Sprintf(" · elapsed %.1fs", d.Elapsed))
-	field("Started", d.Started)
-	field("Finished", d.Finished)
-	if d.Playbook != nil {
-		field("Playbook", d.Playbook.Playbook)
-	}
-	if d.Project != nil {
-		field("SCM", d.Project.SCMType+" · "+d.Project.SCMBranch)
-	}
-	if d.Inventory != nil {
-		field("Source", d.Inventory.Source)
-	}
-	if d.ModuleName != "" {
-		field("Module", d.ModuleName+" "+d.ModuleArgs)
-	}
-	if d.SystemJobType != "" {
-		field("System job", d.SystemJobType)
-	}
-	if d.ApprovalTimeout != nil {
-		field("Approval timeout", fmt.Sprintf("%ds", *d.ApprovalTimeout))
-	}
-	lines = append(lines, "", m.styles.key.Render("Capabilities"))
-	for _, item := range []struct {
-		label string
-		value aap.Capability
-	}{{"Output", d.Capabilities.Output}, {"Cancel", d.Capabilities.Cancel}, {"Children", d.Capabilities.Children}} {
-		style := m.styles.muted
-		if item.value.State == aap.Available {
-			style = m.styles.success
-		}
-		field(item.label, style.Render(string(item.value.State))+" "+item.value.Reason)
-	}
-	return lines
 }

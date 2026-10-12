@@ -34,10 +34,11 @@ func (m *Model) layout() layout {
 	headerHeight := min(len(l.header), max(0, available-1))
 	l.header = l.header[:headerHeight]
 	l.bodyHeight = available - headerHeight
-	if m.screen == outputScreen && len(l.header) > 3 {
+	outputRow := len(m.connectionHeader()) + 2
+	if m.screen == outputScreen && len(l.header) > outputRow {
 		start := m.outputUpdate.Chunk.Start + m.outputOffset(l.bodyHeight)
 		end := min(m.outputUpdate.Chunk.End, start+l.bodyHeight)
-		l.header[3] = ansi.Truncate(m.styles.muted.Render(fmt.Sprintf("Job %d · lines %d–%d of %d", m.jobDetail.Ref.ID, start, end, m.outputUpdate.Chunk.AbsoluteEnd)), l.width, "")
+		l.header[outputRow] = ansi.Truncate(m.styles.muted.Render(fmt.Sprintf("Job %d · lines %d–%d of %d", m.jobDetail.Ref.ID, start, end, m.outputUpdate.Chunk.AbsoluteEnd)), l.width, "")
 	}
 	return l
 }
@@ -60,7 +61,7 @@ func (m *Model) outputLines() int {
 }
 
 func (m *Model) header(width int) []string {
-	title := []string{"Main", "Job Templates", "Jobs", "Template details", "Job details", "Workflow children", "Output", "Projects", "Inventories", "Inventory", "Groups", "Group", "Hosts"}[m.screen]
+	title := []string{"Main", "Job Templates", "Jobs", "Template details", "Job details", "Workflow children", "Output", "Projects", "Inventories", "Inventory", "Groups", "Group", "Hosts", "Host details", "Workflow node details"}[m.screen]
 	if m.screen == templateScreen && m.templateDetail.Ref.Type == aap.ProjectTemplate {
 		title = "Project details"
 	}
@@ -68,7 +69,8 @@ func (m *Model) header(width int) []string {
 	if m.loading {
 		title += m.styles.warning.Render(" · Loading…")
 	}
-	lines := []string{title, m.styles.muted.Render(m.connection), m.styles.muted.Render(strings.Repeat("─", width))}
+	lines := append([]string{title}, m.connectionHeader()...)
+	lines = append(lines, m.styles.muted.Render(strings.Repeat("─", width)))
 	if m.screen == inventoryScreen || m.screen == groupsScreen || m.screen == groupScreen || m.screen == hostsScreen {
 		location := fmt.Sprintf("Inventory %d · %s", m.inventory.ID, singleLine(m.inventory.Name))
 		if m.group.ID > 0 {
@@ -213,17 +215,21 @@ func (m *Model) screenHelp(width int) []string {
 	case mainScreen:
 		lines = []string{"↑/↓ select · Enter open · q quit · Ctrl-C quit"}
 	case inventoryScreen, groupScreen:
-		lines = []string{"↑/↓ select · Enter open", back}
+		lines = []string{"Tab menu/details · ↑/↓ select/scroll · Enter open · r refresh", back}
 	case templatesScreen, projectsScreen, inventoriesScreen, groupsScreen, jobsScreen:
 		lines = []string{"↑/↓ select · Enter open · / search · r refresh · n/p page", back}
 	case hostsScreen:
-		lines = []string{"↑/↓ select · / search · r refresh · n/p page", back}
+		lines = []string{"↑/↓ select · Enter details · / search · r refresh · n/p page", back}
+	case hostScreen:
+		lines = []string{"↑/↓ scroll · r refresh", back}
+	case nodeScreen:
+		lines = []string{"↑/↓ scroll · Enter child job", back}
 	case templateScreen:
 		lines = []string{"↑/↓ scroll · Esc back · q quit · Ctrl-C quit"}
 	case jobScreen:
 		lines = []string{"o output · w children · c cancel · r refresh · ↑/↓ scroll", back}
 	case workflowScreen:
-		lines = []string{"↑/↓ select · Enter child · r refresh · n/p page", back}
+		lines = []string{"↑/↓ select · d node details · Enter child · r refresh · n/p page", back}
 	case outputScreen:
 		lines = []string{"↑/↓ PgUp/PgDown scroll · ←/→ pan · f follow · r resume", back}
 	}
@@ -232,19 +238,25 @@ func (m *Model) screenHelp(width int) []string {
 		case mainScreen:
 			lines = []string{"↑/↓ select · Enter open", "q quit · Ctrl-C quit"}
 		case inventoryScreen, groupScreen:
-			lines = []string{"↑/↓ select · Enter open", back}
+			lines = []string{"Tab menu/details · ↑/↓ move", "Enter open · r refresh", back}
 		case templatesScreen, projectsScreen, inventoriesScreen, groupsScreen, jobsScreen:
 			lines = []string{"↑/↓ select · Enter open", "/ search · r refresh · n/p page", back}
 		case hostsScreen:
-			lines = []string{"↑/↓ select · / search", "r refresh · n/p page", back}
+			lines = []string{"↑/↓ select · Enter details", "/ search · r refresh · n/p page", back}
 		case templateScreen:
 			lines = []string{"↑/↓ scroll", back}
 		case jobScreen:
 			lines = []string{"o output · w children", "c cancel · r refresh · ↑/↓ scroll", back}
 		case workflowScreen:
-			lines = []string{"↑/↓ select · Enter child", "r refresh · n/p page", back}
+			lines = []string{"↑/↓ select · d node details", "Enter child · r refresh · n/p page", back}
 		case outputScreen:
 			lines = []string{"↑/↓ PgUp/PgDown scroll", "←/→ pan · f follow · r resume", back}
+		}
+	}
+	if m.hasTemplateJobs() {
+		lines = []string{"Tab details/jobs · ↑/↓ scroll/select · Enter job · r refresh · n/p page", back}
+		if width < 60 {
+			lines = []string{"Tab details/jobs · ↑/↓ move", "Enter job · r refresh · n/p page", back}
 		}
 	}
 	for i, line := range lines {

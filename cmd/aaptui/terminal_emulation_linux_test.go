@@ -150,7 +150,9 @@ func TestScreenTerminalColumnsAndLastTemplate(t *testing.T) {
 	}
 	p.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 	waitFor(func() bool {
-		return strings.Contains(row(0), "Template details") && strings.Contains(emulator.String(), "50 · resource-050")
+		text := strings.Join(strings.Fields(emulator.String()), " ")
+		return strings.Contains(row(0), "Template details") &&
+			strings.Contains(text, "ID: 50") && strings.Contains(text, "Name: resource-050")
 	})
 	p.Send(tea.KeyPressMsg{Code: tea.KeyEscape})
 	waitFor(func() bool { return strings.Contains(row(0), "Job Templates") && strings.HasPrefix(row(53), " > ") })

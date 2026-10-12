@@ -99,12 +99,14 @@ func TestLongDetailsScrollAndHelp(t *testing.T) {
 		t.Fatal("detail scroll")
 	}
 	sawLastDetail := false
+	sawCapabilities := strings.Contains(ansi.Strip(m.View().Content), "Children (w):")
 	for i := 0; i < 60; i++ {
 		m.Update(key("j"))
 		sawLastDetail = sawLastDetail || strings.Contains(ansi.Strip(m.View().Content), "last detail")
+		sawCapabilities = sawCapabilities || strings.Contains(ansi.Strip(m.View().Content), "Children (w):")
 	}
 	view := ansi.Strip(m.View().Content)
-	if !sawLastDetail || !strings.Contains(view, "Children:") || !strings.Contains(view, "Esc back") {
+	if !sawLastDetail || !sawCapabilities || !strings.Contains(view, "Esc back") {
 		t.Fatal("details/help inaccessible", view)
 	}
 }

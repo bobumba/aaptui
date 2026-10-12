@@ -70,3 +70,50 @@ func TestInaccessibleChildRetainsIdentity(t *testing.T) {
 		t.Fatal("parent details leaked into child", m.jobDetail, m.err)
 	}
 }
+
+func TestJobsListTimestamps(t *testing.T) {
+	for _, width := range []int{30, 80, 140} {
+		for _, job := range []aap.JobSummary{
+			{Ref: aap.JobRef{ID: 7, Type: aap.PlaybookJob}, Name: "completed", Status: "successful", Started: "2026-10-12T08:10:11.123-04:00", Finished: "2026-10-12T12:12:13Z"},
+			{Ref: aap.JobRef{ID: 8, Type: aap.WorkflowJob}, Name: "running", Status: "running", Started: "2026-10-12T12:10:11Z"},
+			{Ref: aap.JobRef{ID: 9, Type: aap.PlaybookJob}, Name: "pending", Status: "pending"},
+		} {
+			m := New(context.Background(), "")
+			cleanupModel(t, m)
+			m.screen, m.width, m.height = jobsScreen, width, 24
+			m.jobPage.Items = []aap.JobSummary{job}
+			assertFrameSize(t, m)
+			// Join wrapped timestamp lines to check that neither date nor time
+			// disappears on narrow terminals.
+			rows := m.jobListRow(job, true, m.layout().width)
+			text := strings.Join(strings.Fields(strings.Join(rows[1:], " ")), " ")
+			if width >= 120 {
+				text = rows[0]
+			}
+			for _, timestamp := range []string{job.Started, job.Finished} {
+				if !strings.Contains(text, jobTimestamp(timestamp)) {
+					t.Fatalf("width %d: timestamp %q missing from %q", width, timestamp, text)
+				}
+			}
+			if width >= 120 {
+				for _, label := range []string{"STARTED (UTC)", "FINISHED (UTC)"} {
+					if !strings.Contains(m.View().Content, label) {
+						t.Fatalf("missing %q", label)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestJobTimestamp(t *testing.T) {
+	for _, tc := range []struct{ value, want string }{
+		{"", "—"},
+		{"2026-10-12T08:10:11.123456-04:00", "2026-10-12 12:10:11 UTC"},
+		{"invalid timestamp", "Unavailable"},
+	} {
+		if got := jobTimestamp(tc.value); got != tc.want {
+			t.Errorf("jobTimestamp(%q) = %q, want %q", tc.value, got, tc.want)
+		}
+	}
+}

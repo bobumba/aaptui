@@ -12,11 +12,21 @@ type InventorySummary struct {
 }
 
 type wireInventory struct {
-	ID          int    `json:"id"`
-	Type        string `json:"type"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Kind        string `json:"kind"`
+	wireDetails
+	TotalHosts                   *int   `json:"total_hosts"`
+	TotalGroups                  *int   `json:"total_groups"`
+	TotalInventorySources        *int   `json:"total_inventory_sources"`
+	HostsWithActiveFailures      *int   `json:"hosts_with_active_failures"`
+	InventorySourcesWithFailures *int   `json:"inventory_sources_with_failures"`
+	HasActiveFailures            *bool  `json:"has_active_failures"`
+	HasInventorySources          *bool  `json:"has_inventory_sources"`
+	PendingDeletion              *bool  `json:"pending_deletion"`
+	PreventInstanceGroupFallback *bool  `json:"prevent_instance_group_fallback"`
+	ID                           int    `json:"id"`
+	Type                         string `json:"type"`
+	Name                         string `json:"name"`
+	Description                  string `json:"description"`
+	Kind                         string `json:"kind"`
 }
 
 func (c *Client) ListInventories(ctx context.Context, o ListOptions) (Page[InventorySummary], error) {
@@ -46,12 +56,19 @@ type HostSummary struct {
 }
 
 type wireInventoryMember struct {
-	ID          int    `json:"id"`
-	Type        string `json:"type"`
-	Inventory   int    `json:"inventory"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Enabled     *bool  `json:"enabled"`
+	wireDetails
+	InstanceID          string `json:"instance_id"`
+	FactsModified       string `json:"ansible_facts_modified"`
+	HasActiveFailures   *bool  `json:"has_active_failures"`
+	HasInventorySources *bool  `json:"has_inventory_sources"`
+	LastJob             *int   `json:"last_job"`
+	LastJobHostSummary  *int   `json:"last_job_host_summary"`
+	ID                  int    `json:"id"`
+	Type                string `json:"type"`
+	Inventory           int    `json:"inventory"`
+	Name                string `json:"name"`
+	Description         string `json:"description"`
+	Enabled             *bool  `json:"enabled"`
 }
 
 func (c *Client) InventoryGroups(ctx context.Context, inventoryID int, o ListOptions) (Page[GroupSummary], error) {

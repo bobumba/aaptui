@@ -61,20 +61,39 @@ type Capability struct {
 }
 type JobCapabilities struct{ Output, Cancel, Children Capability }
 type JobDetails struct {
-	systemText *string
+	SourceWorkflowJob, AncestorJob *ResourceReference
+	systemText                     *string
 	JobSummary
-	Capabilities                                       JobCapabilities
-	EventProcessingFinished                            *bool
-	Playbook                                           *PlaybookSettings
-	Project                                            *ProjectSettings
-	Inventory                                          *InventorySettings
-	ModuleName, ModuleArgs, SystemJobType, Explanation string
-	ApprovalTimeout                                    *int
-	TimedOut                                           *bool
-	stdout, cancel, nodes                              string
+	SCMRevision                                                               string
+	Metadata                                                                  ResourceMetadata
+	Options                                                                   ExecutionSettings
+	Template                                                                  *ResourceReference
+	LaunchType, ExecutionNode, ControllerNode, CanceledOn, ApprovalExpiration string
+	Failed, LicenseError, OrgHostLimitError                                   *bool
+	JobSliceNumber                                                            *int
+	Capabilities                                                              JobCapabilities
+	EventProcessingFinished                                                   *bool
+	Playbook                                                                  *PlaybookSettings
+	Project                                                                   *ProjectSettings
+	Inventory                                                                 *InventorySettings
+	ModuleName, ModuleArgs, SystemJobType, Explanation                        string
+	ApprovalTimeout                                                           *int
+	TimedOut                                                                  *bool
+	stdout, cancel, nodes                                                     string
 }
 type wireJob struct {
-	ResultStdout *string `json:"result_stdout"`
+	UnifiedJobTemplate *int    `json:"unified_job_template"`
+	LaunchType         string  `json:"launch_type"`
+	ExecutionNode      string  `json:"execution_node"`
+	ControllerNode     string  `json:"controller_node"`
+	CanceledOn         string  `json:"canceled_on"`
+	ApprovalExpiration string  `json:"approval_expiration"`
+	Failed             *bool   `json:"failed"`
+	LicenseError       *bool   `json:"license_error"`
+	OrgHostLimitError  *bool   `json:"org_host_limit_error"`
+	JobSliceNumber     *int    `json:"job_slice_number"`
+	JobTemplate        *int    `json:"job_template"`
+	ResultStdout       *string `json:"result_stdout"`
 	wireResource
 	Started                 string            `json:"started"`
 	Finished                string            `json:"finished"`
@@ -136,7 +155,12 @@ func (c *Client) Job(ctx context.Context, ref JobRef) (JobDetails, error) {
 	if w.ID != ref.ID || !validType(w.Type) || (ref.Type != "" && JobType(w.Type) != ref.Type) {
 		return JobDetails{}, apiError(Malformed, "read job")
 	}
-	d := JobDetails{JobSummary: c.jobSummary(w), EventProcessingFinished: w.EventProcessingFinished, Explanation: c.CleanText(w.Explanation)}
+	d := JobDetails{JobSummary: c.jobSummary(w), EventProcessingFinished: w.EventProcessingFinished, Explanation: c.CleanText(w.Explanation),
+		SourceWorkflowJob: c.reference(nil, w.Summary.SourceWorkflowJob), AncestorJob: c.reference(nil, w.Summary.AncestorJob),
+		SCMRevision: c.cleanLabel(w.SCMRevision), Metadata: c.metadata(w.wireDetails), Options: c.executionSettings(w.wireResource), Template: c.reference(w.UnifiedJobTemplate, w.Summary.UnifiedJobTemplate),
+		LaunchType: c.cleanLabel(w.LaunchType), ExecutionNode: c.cleanLabel(w.ExecutionNode), ControllerNode: c.cleanLabel(w.ControllerNode),
+		CanceledOn: c.cleanLabel(w.CanceledOn), ApprovalExpiration: c.cleanLabel(w.ApprovalExpiration),
+		Failed: w.Failed, LicenseError: w.LicenseError, OrgHostLimitError: w.OrgHostLimitError, JobSliceNumber: w.JobSliceNumber}
 	unknown := Capability{Unknown, "Capability not exposed by this resource"}
 	d.Capabilities = JobCapabilities{unknown, unknown, unknown}
 	d.stdout = w.Related["stdout"]
@@ -156,9 +180,9 @@ func (c *Client) Job(ctx context.Context, ref JobRef) (JobDetails, error) {
 	case PlaybookJob:
 		d.Playbook = &PlaybookSettings{c.CleanText(w.Playbook), c.CleanText(w.JobType), c.CleanText(w.Limit), w.Inventory, w.Project}
 	case ProjectUpdate:
-		d.Project = &ProjectSettings{c.CleanText(w.SCMType), c.CleanText(w.SCMURL), c.CleanText(w.SCMBranch)}
+		d.Project = c.projectSettings(w.wireResource)
 	case InventoryUpdate:
-		d.Inventory = &InventorySettings{c.CleanText(w.Source), c.CleanText(w.SourcePath), w.Inventory}
+		d.Inventory = c.inventorySettings(w.wireResource)
 	case AdHocCommand:
 		d.ModuleName = c.CleanText(w.ModuleName)
 		d.ModuleArgs = c.CleanText(w.ModuleArgs)

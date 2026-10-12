@@ -1,6 +1,7 @@
 # AAP TUI Implementation Plan
 
-Status: milestones 1 and 2 complete and verified offline.
+Status: both UI milestones implemented and verified offline.
+Deployed AAP 2.6 validation remains unavailable.
 
 This plan refines `SPEC.md` and follows `AGENTS.md`. No application code is
 authorized by the design discussion alone. Implement one milestone at a time
@@ -217,25 +218,73 @@ server cancellation separately and require confirmation identifying the job.
 
 ## Milestones and acceptance tests
 
-Implementation is authorized by the request to implement the remaining milestones.
+### 1. Consolidate job details and separate capabilities
 
-| Milestone | Deliverable | Independently testable acceptance criteria |
-| --- | --- | --- |
-| 1. Inventories main menu | Add Inventories as a main menu option and list inventories for selection | Verify the main menu includes Inventories, opening it lists inventories, and back navigation returns to the main menu. |
-| 2. Inventory groups and hosts | Selecting an inventory opens a submenu with Groups and Hosts | Verify Hosts lists all hosts in the selected inventory, including hosts across pages. Verify Groups displays the inventory's groups and allows traversal through groups to display hosts. Verify back navigation preserves the selected inventory and traversal context. |
+Place all API-returned job information under one **Job details** section,
+including identity, description, status, timestamps, metadata, related resource
+references, execution settings, and type-specific fields. Move capabilities into
+a separate **Capabilities** section that clearly identifies the available user
+navigation and actions: output, workflow children, and cancellation. Keep
+capability state and unavailability reasons with those controls.
 
-Milestone 1: inventory API reader, searchable/paginated list, menu wiring, and
-back navigation implemented. `go test ./...` and `go vet ./...` passed.
+Acceptance criteria:
 
-Milestone 2: inventories open Groups/Hosts; groups open Child groups/Hosts.
-Group Hosts includes descendants through `all_hosts/`. Each collection uses
-bounded server pages with `n`/`p` navigation, search, and refresh. Back navigation
-restores inventory/group identity, page, search, and selection. API and TUI tests
-use synthetic fixtures for both gateway and direct prefixes.
+- All currently displayed API-returned job fields appear in the Job details
+  section; no metadata or configuration fields appear under Capabilities.
+- Capabilities show the relevant existing key bindings and distinguish available,
+  unavailable, and unknown operations with their reasons. Preserve the existing
+  output and workflow navigation and cancellation confirmation behavior.
+- Preserve optional-field handling, valid false/zero values, timestamp formatting,
+  token redaction, external-text sanitization, refresh, scrolling, and back
+  navigation across supported job types and unknown types.
+- Add TUI regression tests for section boundaries, common and type-specific
+  fields, capability states and reasons, navigation/actions, and narrow terminals.
+- Update relevant user documentation to describe the new job detail organization.
 
-Final verification: changed Go files formatted with `gofmt -w`;
-`go test ./...`, `go vet ./...`, `go test -race ./...`, and `git diff --check`
-passed. Deployed AAP 2.6 validation remains unavailable.
+Implemented: Capabilities appears first with the existing `o`, `w`, and `c`
+bindings, states, and reasons. All displayed API-returned job fields appear under
+Job details, including identity and execution settings. Regression tests cover
+section boundaries across job types, unknown/missing capabilities, and unavailable
+actions. Existing output, workflow, and cancellation-confirmation tests pass.
+
+### 2. Display resource details in a responsive table layout
+
+Replace the single left-aligned field-per-line presentation with a consistent
+table layout for jobs, job templates, projects, inventories, groups, hosts, and
+workflow nodes. Render field names in bold and in a theme-aware color distinct
+from their values. Align labels and values in separate columns, and place multiple
+label/value pairs side by side when terminal width allows to use horizontal space.
+Apply this layout to the Job details section from milestone 1 while keeping
+Capabilities visually separate.
+
+Acceptance criteria:
+
+- Use a shared detail renderer within the existing TUI package and Lip Gloss
+  styling conventions; preserve resource-specific field selection and useful
+  grouping.
+- Wide terminals display multiple label/value pairs per row with consistent
+  spacing and alignment. Narrow terminals fall back to one pair per row and wrap
+  long labels and values without losing field content or exceeding view width.
+- Labels remain bold and visually distinct from values in both light and dark
+  themes. Account for styled text and Unicode display width when aligning cells.
+- Preserve missing/unavailable placeholders, valid false/zero values, safe text
+  handling, scrolling through all wrapped rows, and readable multiline values.
+- Preserve inventory/group menu focus, template jobs table focus, workflow and
+  child navigation, refresh, and back-navigation context after resize or scroll.
+- Add TUI regression tests covering every resource detail view, wide and narrow
+  layouts, label styling, long/multiline values, Unicode, resizing, scrolling, and
+  focus/navigation behavior. Update relevant user documentation.
+
+Implemented: resource views share a structured detail table with bold,
+theme-aware colored labels, aligned value columns, and two pairs per row at
+content widths of 120 columns or more. Narrow layouts use one pair per row;
+very small widths stack labels and values. Descriptions and multiline values
+span the table width. Tests cover wrapping, Unicode, false/zero values, themes,
+all resource views, resizing, scrolling, menu/table focus, and real terminal
+rendering. README.md and SPEC.md describe the updated presentation.
+
+Verification: modified Go files formatted with `gofmt -w`; `go test ./...`,
+`go vet ./...`, and `git diff --check` passed. Verification remains offline.
 
 For each implementation milestone: format changed Go files with `gofmt -w`, run
 `go test ./...` and `go vet ./...`, review changes for unintended scope, and update

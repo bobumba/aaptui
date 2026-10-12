@@ -5,14 +5,59 @@ job templates, projects, inventories, and recent jobs of all types, inspect deta
 workflow children, scroll and follow output, and explicitly confirm supported
 job cancellation.
 
+The header displays the effective AAP URL, the username resolved through `me/`,
+and the number of jobs with status `running` visible to the authenticated token
+across job types. Header requests run asynchronously and do not interrupt
+navigation. The running count refreshes every five seconds using the API's
+filtered total, without downloading all jobs. Temporary failures retry with
+backoff capped at 30 seconds (rate-limit guidance may extend a wait to 60 seconds).
+Failed refreshes mark the last count as stale, or unavailable before the first
+successful fetch. Authentication, permission, and malformed-response failures
+stop count polling. Restart to retry these failures or identity lookup failures.
+Quitting stops header requests and polling waits.
+
+The main-menu Jobs list includes start and finish dates and times in UTC. Wide
+terminals show timestamp columns; narrower terminals use wrapped timestamp rows.
+Missing timestamps show `—`; invalid timestamps show `Unavailable`.
+
+Job-template details also show a table of that template's jobs, newest first,
+with ID, name, status, and start time (columns adapt to terminal width). Tab
+switches focus between details and the table; arrows scroll details or select
+a job. Enter opens job details and their existing output controls. Use `n`/`p`
+for pages and `r` to refresh the table; Esc restores the template and page.
+
 The main menu contains Job Templates, Jobs, Projects, and Inventories. Inventories
 lists the `inventories/` collection with search, refresh, and pagination.
 Selecting an inventory opens Groups and Hosts. Groups lists all inventory groups;
 selecting a group opens Child groups and Hosts. Group host lists include hosts
 from descendant groups. Use `n`/`p` to reach hosts and groups across pages; Esc restores the previous
-page, search, selection, and inventory/group context. Hosts shows enabled state.
-Projects lists the `projects/` API collection and shows status, description, and SCM type, URL, and
-branch in its detail view.
+page, search, selection, and inventory/group context. Inventory and group screens
+also display object details; Tab switches between menu selection and detail
+scrolling. Enter on a host opens its details, including enabled state, owning
+inventory, instance ID, failure flags, last job, and facts timestamp. Use `r` to
+refresh inventory, group, or host details.
+
+Object views include pertinent fields reviewed against the pinned API source:
+creation/modification times and ownership, job launch and failure information,
+execution settings and related resource IDs/names, template run history, SCM
+revision and update settings, and inventory counts and failures. Available
+boolean and numeric fields preserve false and zero. Missing timestamps show `—`;
+optional fields not returned by the server are omitted. Details use aligned
+label/value tables with bold, theme-aware colored labels. Wide terminals show
+two field/value pairs per row; narrower terminals use one pair per row, with a
+stacked layout at very small widths. Descriptions and multiline values span the
+full table width. Long labels and values wrap, and all detail rows can be scrolled.
+Job views separate **Capabilities** from **Job details**. Capabilities list output
+(`o`), workflow children (`w`), and cancellation (`c`) with their availability and
+reasons. All displayed API-returned job information, including execution settings,
+appears under Job details. Cancellation still requires confirmation.
+Credential references show only IDs/names; credential contents, arbitrary
+variables, module arguments, job environments, and artifacts are not displayed.
+SCM URLs omit embedded credentials, query parameters, and fragments.
+
+On workflow children, `d` opens node details, including template/child references,
+convergence and skip flags, and success/failure/always node IDs. Pending and
+skipped nodes remain inspectable. Enter still opens a launched child job.
 
 **AAP 2.6 compatibility has not been tested against a deployed instance.** The
 implementation is verified offline with synthetic HTTPS servers and fixtures.
@@ -105,11 +150,13 @@ full details and messages.
 | Everywhere | Ctrl-C quits; `q` quits outside search; Esc returns |
 | Main/lists | arrows or `j`/`k` select; Enter opens |
 | Template/project/job/inventory/group/host lists | `/` enters search; Enter applies server-side search; Esc exits input; `n`/`p` next/previous page; `r` refreshes |
-| Inventory/group submenus | arrows or `j`/`k` select Groups or Hosts; Enter opens; Esc returns |
-| Host lists | Enter has no detail action; use selection, search, refresh, and pagination |
-| Template/project details | arrows or `j`/`k` scroll wrapped details; Esc returns |
+| Inventory/group details and menus | Tab switches menu/details focus; arrows or `j`/`k` select/scroll; Enter opens the selected menu item; `r` refreshes details; Esc returns |
+| Host lists/details | Enter opens details; arrows or `j`/`k` scroll details; `r` refreshes; Esc restores the list |
+| Template details with jobs | Tab switches details/jobs focus; arrows or `j`/`k` scroll/select; Enter opens a job; `n`/`p` page; `r` refreshes jobs; Esc returns |
+| Project details | arrows or `j`/`k` scroll wrapped details; Esc returns |
 | Job details | `o` output; `w` workflow children; `c` cancellation dialog; `r` refresh; arrows or `j`/`k` scroll |
-| Workflow children | Enter opens a launched child; `n`/`p` page; `r` refresh |
+| Workflow children | `d` opens node details; Enter opens a launched child; `n`/`p` page; `r` refresh |
+| Workflow node details | arrows or `j`/`k` scroll; Enter opens a launched child; Esc restores the node list |
 | Output | arrows or `j`/`k` scroll; PgUp/PgDown page output; left/right or `h`/`l` pan; `f` follows newest output; `r` resumes after a stopped error |
 | Cancellation dialog | `y` or Enter confirms the identified job; `n` or Esc dismisses |
 
@@ -177,7 +224,9 @@ unsafe links/redirects, every required resource type, workflow nodes, bounded
 storage, older-history reload, retries, delayed final output, cleanup, and
 confirmation/status reconciliation. Integration tests drive the TUI against
 synthetic HTTPS APIs for both modes, including inventory/group traversal, host
-pagination, and restoration of selection and search after returning. Terminal interaction still needs manual
+pagination, identity/count header initialization, template-job paging, and
+restoration of selection and search after returning. Header polling tests use
+deterministic timing to verify backoff and cancellation. Terminal interaction still needs manual
 validation in the user's terminal. A Linux pseudo-terminal regression emulates
 older `TERM=screen` sessions at 237 columns by 62 rows, checks the initial list
 columns, and selects and opens the last template. Deployed AAP 2.6 validation

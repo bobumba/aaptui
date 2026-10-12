@@ -128,8 +128,8 @@ func TestInventorySelectionAndHostStatus(t *testing.T) {
 	if m.selected != 2 {
 		t.Fatal("unbounded host selection")
 	}
-	if _, cmd := m.Update(key("enter")); cmd != nil || m.screen != hostsScreen {
-		t.Fatal("host list opens an unsupported detail")
+	if _, cmd := m.Update(key("enter")); cmd != nil || m.screen != hostScreen || m.hostDetail.Name != "unknown host" {
+		t.Fatal("host detail did not retain the selected summary")
 	}
 	for _, s := range []screen{inventoryScreen, groupScreen} {
 		m.screen, m.selected = s, 0

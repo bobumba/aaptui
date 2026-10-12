@@ -29,20 +29,34 @@ type PlaybookSettings struct {
 	Playbook, JobType, Limit string
 	Inventory, Project       *int
 }
-type ProjectSettings struct{ SCMType, SCMURL, SCMBranch string }
+type ProjectSettings struct {
+	DefaultEnvironment                                                    *ResourceReference
+	SCMType, SCMURL, SCMBranch, SCMRevision, SCMRefspec, LocalPath        string
+	Clean, TrackSubmodules, DeleteOnUpdate, UpdateOnLaunch, AllowOverride *bool
+	UpdateCacheTimeout                                                    *int
+}
 type InventorySettings struct {
-	Source, SourcePath string
-	Inventory          *int
+	Source, SourcePath                       string
+	Inventory                                *int
+	SourceProject, InventorySource           *ResourceReference
+	SCMRevision, HostFilter                  string
+	Overwrite, OverwriteVars, UpdateOnLaunch *bool
+	UpdateCacheTimeout                       *int
 }
 type TemplateDetails struct {
 	TemplateSummary
-	Playbook        *PlaybookSettings
-	Project         *ProjectSettings
-	Inventory       *InventorySettings
-	SystemJobType   string
-	ApprovalTimeout *int
+	Metadata               ResourceMetadata
+	Options                ExecutionSettings
+	LastJobRun, NextJobRun string
+	LastJobFailed          *bool
+	Playbook               *PlaybookSettings
+	Project                *ProjectSettings
+	Inventory              *InventorySettings
+	SystemJobType          string
+	ApprovalTimeout        *int
 }
 type wireResource struct {
+	wireDetails
 	ID          int    `json:"id"`
 	Type        string `json:"type"`
 	Name        string `json:"name"`
@@ -116,14 +130,15 @@ func (c *Client) Template(ctx context.Context, ref TemplateRef) (TemplateDetails
 	if w.ID != ref.ID || !validType(w.Type) || TemplateType(c.CleanText(w.Type)) != ref.Type {
 		return TemplateDetails{}, apiError(Malformed, "read template")
 	}
-	d := TemplateDetails{TemplateSummary: c.templateSummary(w)}
+	d := TemplateDetails{TemplateSummary: c.templateSummary(w), Metadata: c.metadata(w.wireDetails), Options: c.executionSettings(w),
+		LastJobRun: c.cleanLabel(w.LastJobRun), NextJobRun: c.cleanLabel(w.NextJobRun), LastJobFailed: w.LastJobFailed}
 	switch ref.Type {
 	case PlaybookTemplate:
 		d.Playbook = &PlaybookSettings{c.CleanText(w.Playbook), c.CleanText(w.JobType), c.CleanText(w.Limit), w.Inventory, w.Project}
 	case ProjectTemplate:
-		d.Project = &ProjectSettings{c.CleanText(w.SCMType), c.CleanText(w.SCMURL), c.CleanText(w.SCMBranch)}
+		d.Project = c.projectSettings(w)
 	case InventoryTemplate:
-		d.Inventory = &InventorySettings{c.CleanText(w.Source), c.CleanText(w.SourcePath), w.Inventory}
+		d.Inventory = c.inventorySettings(w)
 	case SystemTemplate:
 		d.SystemJobType = c.CleanText(w.JobType)
 	case ApprovalTemplate:

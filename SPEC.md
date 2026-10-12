@@ -39,6 +39,16 @@ application output. TLS verification must be enabled by default.
 
 ## Initial Features
 
+### Connection header
+
+Display the effective connected AAP URL and the authenticated user's username
+from the `me/` endpoint on every screen. Lookup is asynchronous, with visible
+loading and error states, and must not display credentials.
+Also display the total number of jobs with status `running` visible to the
+authenticated token across supported job types. Refresh the count periodically
+without blocking navigation; failures must mark it stale or unavailable.
+Quitting stops header requests and polling.
+
 ### Job Templates
 
 Users can:
@@ -46,6 +56,8 @@ Users can:
 - List job templates
 - Search/filter job templates
 - View job template details
+- View a paginated table of the selected template's jobs, newest first
+- Open a job from that table and return to the template's previous context
 
 Launching or relaunching jobs is deferred and is not part of the
 initial implementation.
@@ -71,7 +83,7 @@ descendant groups. Esc restores the previous selection, page, and traversal cont
 Users can:
 
 - List recent jobs
-- View job status
+- View job status and start/end date-times in the Jobs list
 - View job details
 - View job output
 - Continuously follow live output while a job is active, without
@@ -96,6 +108,35 @@ must be displayed clearly, and following must be resumable without
 duplicating already displayed output. Leaving the output screen or
 quitting must stop its background activity. Exiting the application
 must not cancel jobs on the server.
+
+### Object details
+
+Object views show pertinent common and type-specific fields selected through an
+endpoint-by-endpoint API review. Include available timestamps, ownership and
+related resource names/IDs, execution settings, SCM revisions and update settings,
+inventory counts and failure flags, host state, and status explanations. Preserve
+false/zero values and handle absent fields without inventing data. Do not display
+credential contents or arbitrary secret-bearing variables, environments, module
+arguments, or artifacts. Sanitize external text and redact the configured token.
+
+Job views place all displayed API-returned job fields under one Job details
+section. A separate Capabilities section identifies output (`o`), workflow children
+(`w`), and cancellation (`c`), their availability, and any reasons. Preserve the
+existing navigation and cancellation confirmation behavior.
+
+All resource detail views use a consistent responsive table with aligned label
+and value columns. Field names are bold and use a theme-aware color distinct from
+values. Wide terminals show multiple field/value pairs per row; narrow terminals
+use one pair per row and very small widths stack labels above values. Descriptions
+and multiline values span the table width. Wrap long labels and values using
+Unicode display widths, and keep every wrapped row accessible through scrolling.
+Resizing and scrolling preserve existing menu/table focus and navigation context.
+
+Inventory/group screens retain their navigation menus; Tab switches menu/details
+focus. Hosts have scrollable detail views. Workflow nodes, including pending and
+skipped nodes, have inspectable details through `d`, with existing Enter child-job
+navigation retained. Detail requests are asynchronous and cancellable, and Esc
+restores prior selection, search, page, and detail context.
 
 ### Navigation
 

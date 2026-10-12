@@ -32,11 +32,13 @@ func assertFrameSize(t *testing.T, m *Model) []string {
 }
 
 func TestStyledFramesFitTerminal(t *testing.T) {
-	for screen := mainScreen; screen <= hostsScreen; screen++ {
+	for screen := mainScreen; screen <= nodeScreen; screen++ {
 		for _, size := range [][2]int{{1, 1}, {2, 2}, {19, 6}, {30, 10}, {40, 12}, {80, 24}} {
 			for _, state := range []string{"normal", "loading", "error", "search", "confirmation"} {
 				t.Run(fmt.Sprintf("%d/%dx%d/%s", screen, size[0], size[1], state), func(t *testing.T) {
 					m := New(context.Background(), "gateway · https://aap.example.com")
+					m.WithIdentity("https://aap.example.com", fakeUser{}).WithTemplateJobs(&fakeTemplateJobs{})
+					m.WithRunningJobs(func(ctx context.Context) RunningJobsPoller { return &fakeRunningJobs{ctx: ctx} })
 					cleanupModel(t, m)
 					m.screen = screen
 					m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
@@ -45,6 +47,9 @@ func TestStyledFramesFitTerminal(t *testing.T) {
 					m.jobPage.Items = []aap.JobSummary{{Name: name, Status: "running"}}
 					m.nodePage.Items = []aap.WorkflowNode{{Name: name, Status: "pending", Reason: "Not launched"}}
 					m.templateDetail.Description = name
+					m.templateDetail.Ref.Type = aap.PlaybookTemplate
+					m.templateJobsFocus = true
+					m.templateJobPage.Items = []aap.JobSummary{{Name: name, Status: "running"}}
 					m.inventory = aap.InventorySummary{ID: 7, Name: name}
 					m.group = aap.GroupSummary{ID: 9, Name: name}
 					m.inventoryPage.Items = []aap.InventorySummary{{Name: name}}
@@ -154,8 +159,14 @@ func TestInitialListIndentationMatchesSelectionChanges(t *testing.T) {
 				lines := assertFrameSize(t, m)
 				header := ansi.Strip(lines[3])
 				nameColumn := strings.Index(header, "NAME")
-				for i, name := range []string{"first resource", "second resource"} {
-					row := ansi.Strip(lines[4+i])
+				for _, name := range []string{"first resource", "second resource"} {
+					row := ""
+					for _, line := range lines[4:] {
+						if strings.Contains(ansi.Strip(line), name) {
+							row = ansi.Strip(line)
+							break
+						}
+					}
 					if got := strings.Index(row, name); got != nameColumn {
 						t.Fatalf("screen %d width %d after %q: name column = %d, want %d: %q", screen, width, keypress, got, nameColumn, row)
 					}
