@@ -45,8 +45,14 @@ the existing launch/cancel/relaunch operations. Red Hat's
 documents write scope, including read access, and a blank application for PATs.
 The JSON payload/response fixtures remain synthetic models of that flow. When
 setup only prompts for a URL and a token was supplied, use the existing `me/`
-reader to verify authentication before saving. Fully supplied connections retain
-the existing asynchronous header lookup and perform no startup mutation.
+reader to verify authentication before saving. New-configuration setup also
+accepts entered tokens in either mode and verifies them with that mode's `me/`
+route before replacing credentials. The startup menu itself performs no requests.
+Loading a complete current configuration retains the existing asynchronous header
+lookup and performs no startup mutation. New setup ignores current file/environment
+overrides for its active connection and saves only after successful authentication;
+current configuration loading keeps its existing precedence and origin scoping.
+This startup choice adds no API endpoints or changes to token creation.
 
 ### Recorded job variables
 

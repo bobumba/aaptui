@@ -31,14 +31,24 @@ Configuration:
 These connection settings may be supplied through environment
 variables or a configuration file.
 
-On startup, prompt for the host URL if it is missing. If no API token
-is available, prompt for the user's username and password and use them
-to generate an API token. Mask password entry and keep login credentials
-in memory only. When the URL and token are already available, launch
-without prompting. Connection mode and TLS verification retain their
-defaults; validate all supplied settings before sending credentials.
+On every launch, prompt to load the current configuration or create a new one
+before opening the main TUI. Loading the current configuration reuses the
+effective settings and credentials, prompting for a missing host URL or gateway
+username/password when needed. Mark absent or invalid current connections as
+unavailable and keep new setup accessible.
 
-Save the API URL and generated token together as JSON fields `url` and
+Creating a new configuration prompts for the host URL, connection mode, TLS
+verification, and authentication details, even when current settings are complete.
+Start with gateway mode and TLS verification enabled; do not reuse current URLs
+or tokens. Gateway authentication accepts username/password to generate a token
+or an existing API token. Direct mode prompts for an existing token and explains
+that token creation requires gateway mode. Mask password/token entry and keep
+login credentials in memory only. Validate all settings before sending credentials.
+New setup uses the entered values for this launch, ignoring selected-file and
+environment overrides. Those overrides continue applying to the current choice
+on later launches.
+
+Save the API URL and authenticated token together as JSON fields `url` and
 `token` in `~/.config/aaptui/config.json`, using the user's home directory
 and private directory/file permissions (`0700`/`0600`). Write atomically
 and preserve unrelated settings. This credential-storage path stays
@@ -47,20 +57,25 @@ selects a different settings file. Never persist the login username or
 password or accept tokens as command-line arguments.
 
 Load defaults, then the private home configuration, then a different
-selected settings file, then environment overrides. Read saved tokens
-only from the private home configuration, bound to its stored API URL;
+selected settings file, then environment overrides for the current choice.
+Read saved tokens only from the private home configuration, bound to its stored API URL;
 do not reuse a saved token for a different API origin. `AAP_TOKEN` remains
 supported and overrides the saved token. Missing values trigger prompts;
-invalid nonempty values and malformed files remain errors. Noninteractive
-startup with missing required values must fail clearly without waiting
-for input. Cancellation and failures must restore terminal state and
-must not expose credentials.
+invalid nonempty values and malformed files remain errors. Save new connections
+only after successful authentication; cancellation, authentication failures, and
+failed replacement writes leave existing credentials intact. Do not overwrite a
+malformed or symlinked home credential file; report the storage error so the user
+can correct it. Noninteractive startup must fail clearly without waiting for
+input, including when credentials are complete. Cancellation and failures must
+restore terminal state and must not expose credentials.
 
 Prompted token creation uses the AAP 2.6 gateway personal-access-token
 endpoint with write scope, subject to the user's existing permissions.
 Direct-controller mode requires an existing token. Keep requests cancellable,
 reject redirects, and never automatically retry uncertain token creation.
-If only the URL is prompted and a token is supplied, verify it before saving.
+Verify entered tokens with `me/` before saving, including when only the URL was
+missing from the current configuration. Loading a complete current configuration
+performs no startup authentication request or credential write.
 
 Credentials must never be stored in source code or displayed in
 application output. TLS verification must be enabled by default.

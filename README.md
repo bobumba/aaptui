@@ -155,12 +155,21 @@ go build -o aaptui ./cmd/aaptui
 ./aaptui
 ```
 
-On first launch, enter the gateway host URL, username, and password when prompted.
-Password entry is masked. The app creates a gateway personal access token with
-write scope (subject to your existing permissions), then saves the URL and token
-together in `~/.config/aaptui/config.json`. It never saves the login username or
-password. Later launches reuse the saved connection without prompting. Esc,
-Ctrl-C, and Ctrl-D cancel setup; losing terminal input also cancels it.
+Every launch offers **Load current configuration** and **Create new
+configuration**. Use arrows or Tab to select and Enter to continue. The current
+choice reuses your effective saved/file/environment settings and prompts for
+missing details. When no current connection is available or its settings cannot
+be loaded, the menu marks it unavailable and selects new setup by default.
+
+For a new connection, enter the host URL, connection mode (`gateway` by default),
+and TLS verification (`true` by default). In gateway mode, choose `login` to enter
+a username/password or `token` to enter an existing API token. Direct mode requires
+an existing token. Password and token entry are masked. Gateway login creates a
+personal access token with write scope, subject to your existing permissions.
+After successful authentication, the app saves the URL, token, mode, and TLS
+setting in `~/.config/aaptui/config.json`. It never saves the login username or
+password. Esc, Ctrl-C, and Ctrl-D cancel either prompt; losing terminal input
+also cancels it.
 
 You can still use an existing token:
 
@@ -172,10 +181,13 @@ printf '\n'
 ./aaptui
 ```
 
-Environment variables override saved settings. Complete supplied URL/token pairs
-launch without prompts or writing a credential file. If only the URL is missing,
-setup prompts for it, verifies the supplied token using `me/`, then saves the
-connection. Missing settings without an interactive terminal fail immediately.
+Select **Load current configuration** to use environment overrides. Complete
+supplied URL/token pairs connect without further setup or writing a credential
+file. If only the URL is missing, setup prompts for it, verifies the supplied
+token using `me/`, then saves the connection. New setup verifies entered tokens
+before saving, and uses your entered settings for this launch even when file or
+environment overrides are present. Startup requires an interactive terminal;
+redirected input/output fails immediately rather than waiting for the choice.
 Tokens are never accepted as arguments or written to job-output cache metadata.
 
 ## Configuration
@@ -183,10 +195,10 @@ Tokens are never accepted as arguments or written to job-output cache metadata.
 Copy [config.example.json](config.example.json) to
 `$XDG_CONFIG_HOME/aaptui/config.json`, or `~/.config/aaptui/config.json` when XDG
 configuration home is unset. Choose another file with `--config PATH`.
-An absent default file is fine; an absent explicit file is an error.
-Startup always loads `~/.config/aaptui/config.json` first. A different default or
-explicit settings file overrides its non-secret settings, then environment values
-override both files. Saved credentials always stay in the home configuration,
+An absent default file is fine; an absent explicit file makes the current choice
+unavailable. For the current choice, startup loads `~/.config/aaptui/config.json`
+first. A different default or explicit settings file overrides its non-secret
+settings, then environment values override both files. Saved credentials always stay in the home configuration,
 even when XDG or `--config` selects another file; other files cannot contain tokens.
 
 | Setting | Environment override | Default |
@@ -196,8 +208,8 @@ even when XDG or `--config` selects another file; other files cannot contain tok
 | `connection_mode` | `AAP_CONNECTION_MODE` | `gateway` |
 | `tls_verify` | `AAP_TLS_VERIFY` | `true` |
 
-Precedence is defaults, home file, selected file, then environment (including
-explicit false and empty values). Missing/blank URLs or tokens trigger setup;
+For the current choice, precedence is defaults, home file, selected file, then
+environment (including explicit false and empty values). Missing/blank URLs or tokens trigger setup;
 invalid nonempty settings, invalid tokens, unknown JSON fields, token fields
 outside the private home file, null values, and files larger than 64 KiB are rejected.
 Saved tokens are bound to their stored API origin; changing `AAP_URL` to another
@@ -205,17 +217,25 @@ origin prompts for new credentials unless `AAP_TOKEN` is supplied.
 
 The home credential directory must have permissions `0700` and its regular
 configuration file `0600`; symlinked credential paths are rejected. Startup saves
-atomically and preserves other settings files. If an existing credential file has
-insecure permissions, correct them before launching:
+atomically and preserves other settings files. New setup ignores `--config`, XDG
+settings, and `AAP_*` values for the active connection, and replaces the home
+credentials only after successful authentication. Those overrides still apply
+when loading the current configuration on a subsequent launch. Cancellation and
+authentication or replacement-write failures preserve saved credentials. A
+malformed or symlinked home file is not overwritten; correct it before saving a
+new connection. If an existing credential file has insecure permissions, correct
+them before loading the current configuration:
 
 ```bash
 chmod 700 ~/.config/aaptui
 chmod 600 ~/.config/aaptui/config.json
 ```
 
-To replace an expired/revoked saved token, remove the `token` field from the home
-configuration and unset `AAP_TOKEN`, then relaunch to sign in again. Removing the
-file forgets both the connection and preferences. Local removal does not revoke
+To replace an expired/revoked saved token or change servers, select **Create new
+configuration** and enter the connection details. You can also remove the `token`
+field from the home configuration and unset `AAP_TOKEN`, then load the current
+configuration to sign in again. Removing the file forgets both the connection
+and preferences. Local removal does not revoke
 the server token; revoke unwanted tokens in the gateway's token management UI.
 
 `gateway` uses `/api/controller/v2/`; `direct` uses `/api/v2/`. Direct token
@@ -364,10 +384,13 @@ unsafe links/redirects, every required resource type, workflow nodes, bounded
 storage, older-history reload, retries, delayed final output, cleanup, and
 confirmation/status reconciliation. Startup regressions cover missing settings,
 gateway token creation, safe failures without retries, credential permissions,
-atomic replacement, environment overrides, and server scoping. Linux terminal
-tests check password masking, graceful cancellation and terminal restoration;
-input EOF is covered separately. Integration tests drive the TUI against
-synthetic HTTPS APIs for both modes, including inventory/group traversal, host
+atomic replacement, environment overrides, and server scoping. Startup-choice
+tests cover complete/incomplete/invalid current settings, fresh setup despite
+file/environment overrides, token verification in both modes, successful
+replacement, and preservation after failures. Linux terminal tests check both
+startup choices, password/token masking, graceful cancellation, and terminal
+restoration; input EOF is covered for each prompt. Integration tests drive the
+TUI against synthetic HTTPS APIs for both modes, including inventory/group traversal, host
 pagination, identity/count header initialization, template-job paging, and
 survey/manual-variable launch with restoration of the source template. Launch
 tests cover variable validation/precision, password defaults/redaction, keyboard

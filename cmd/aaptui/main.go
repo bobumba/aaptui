@@ -14,7 +14,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"aaptui/internal/aap"
-	"aaptui/internal/config"
 	"aaptui/internal/tui"
 )
 
@@ -28,7 +27,7 @@ func runWithArgs(args []string) (resultErr error) {
 	path := flags.String("config", "", "configuration file")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintln(os.Stdout, "Usage: aaptui [--config PATH]\nAuthentication: saved API token or AAP_TOKEN; missing settings prompt for gateway login")
+			fmt.Fprintln(os.Stdout, "Usage: aaptui [--config PATH]\nStartup: choose the current configuration or create a new connection in an interactive terminal")
 			return nil
 		}
 		return fmt.Errorf("invalid command-line options; use --help")
@@ -36,13 +35,9 @@ func runWithArgs(args []string) (resultErr error) {
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments")
 	}
-	s, secrets, err := config.LoadForSetup(*path)
-	if err != nil {
-		return err
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	s, token, err := setupConnection(ctx, s, secrets.Token(), terminalStartupDependencies())
+	s, token, err := startConnection(ctx, *path, terminalStartupDependencies())
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil
