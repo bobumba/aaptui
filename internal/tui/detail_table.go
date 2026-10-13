@@ -71,7 +71,7 @@ func (m *Model) detailTable(fields detailFields, width int) []string {
 	for _, field := range fields {
 		// Descriptions and explicit multiline values get a full row. Wrapping
 		// ordinary values stays within their column and grows the entire row.
-		if field.label == "Description" || strings.Contains(field.value, "\n") {
+		if field.preformatted || field.label == "Description" || strings.Contains(field.value, "\n") {
 			flush()
 			lines = append(lines, m.detailPair(field, width, labelWidth)...)
 			continue
@@ -90,10 +90,10 @@ func (m *Model) detailPair(field detailField, width, labelWidth int) []string {
 	if width < 8 {
 		// A stacked pair still exposes the entire field on very small screens.
 		lines := strings.Split(ansi.Wrap(m.styles.detailLabel.Render(label), width, ""), "\n")
-		return append(lines, strings.Split(ansi.Wrap(field.value, width, ""), "\n")...)
+		return append(lines, wrapDetailValue(field, width)...)
 	}
 	labels := strings.Split(ansi.Wrap(label, labelWidth, ""), "\n")
-	values := strings.Split(ansi.Wrap(field.value, width-labelWidth-2, ""), "\n")
+	values := wrapDetailValue(field, width-labelWidth-2)
 	lines := make([]string, max(len(labels), len(values)))
 	for i := range lines {
 		label, value := "", ""
@@ -106,6 +106,14 @@ func (m *Model) detailPair(field detailField, width, labelWidth int) []string {
 		lines[i] = m.styles.detailLabel.Render(padDetailCell(label, labelWidth)) + "  " + value
 	}
 	return lines
+}
+
+func wrapDetailValue(field detailField, width int) []string {
+	if field.preformatted {
+		// Preserve YAML indentation and spaces, including on wrapped lines.
+		return strings.Split(ansi.Hardwrap(field.value, width, true), "\n")
+	}
+	return strings.Split(ansi.Wrap(field.value, width, ""), "\n")
 }
 
 func padDetailCell(value string, width int) string {

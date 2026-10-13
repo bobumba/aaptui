@@ -1,7 +1,7 @@
 # AAP TUI Implementation Plan
 
-Status: all milestones below are complete and verified offline. Deployed AAP 2.6
-and manual interactive-terminal validation remain unavailable.
+Status: all current milestones are complete and verified offline. Deployed AAP
+2.6 and manual interactive-terminal validation remain unavailable.
 
 This plan refines `SPEC.md` and follows `AGENTS.md`. No application code is
 authorized by the design discussion alone. Implement one milestone at a time
@@ -226,73 +226,43 @@ explicit Launch/Cancel buttons; ordinary typing stays within the focused input.
 
 ## Milestones and acceptance tests
 
-### 1. Display job and job-template extra variables in one distinctive box
+### 1. Incorporate job extra variables into job details as YAML
 
-Group all extra variables for the viewed job or job template into a single,
-clearly labeled bordered box, visually distinct from the surrounding detail
-fields. Jobs show their recorded execution values, including survey answers;
-job templates show their configured `extra_vars`.
-
-Acceptance criteria:
-
-- Render one box containing all extra variables, rather than a separate box per
-  variable. Use consistent styling in job and job-template details and make the
-  box distinctive in both supported themes.
-- Preserve the existing job-variable decoding and extend job-template detail
-  reading using the same bounded, sanitized representation where practical.
-  Review and document the template API contract before changing decoding. Do not
-  substitute current template defaults or survey definitions for recorded job
-  values, or infer which variables originated from a survey.
-- Keep sorted names, nested objects/lists, numeric precision, false/zero/null,
-  blank strings, and multiline values readable inside the box. Integrate with
-  existing detail scrolling, wrapping, refresh, and terminal resizing; keep the
-  box within the available width on small terminals.
-- Show empty, unavailable, unsupported, malformed, and oversized variable states
-  clearly while retaining the other details. Preserve password masking, token
-  redaction, terminal-control sanitization, and existing decoding/display limits.
-  Keep variable values in memory only and out of diagnostic errors.
-- Add API tests for template extra variables and TUI tests for a single box in
-  both detail views, both themes, nested/multiline values, data states, and
-  scrolling/resizing. Retain existing job-variable security regression coverage.
-- Update `SPEC.md`, `docs/API_CONTRACT.md`, and `README.md` for the boxed display
-  and job-template variables; preserve exclusions for unrelated resource data.
-
-Implemented and verified offline: job and job-template variables appear in a
-single labeled, theme-aware bordered box with responsive wrapping and scrolling.
-Template detail reads reuse the bounded, sanitized job-variable representation;
-recorded job values remain separate from configured template values. Refreshing
-focused template details preserves the job table and focus. API/TUI tests cover
-both prefixes, JSON/YAML/object data, safe data states, themes, refresh,
-scrolling/resizing, masking/redaction, and limits. `go test ./...` and
-`go vet ./...` pass. Specification, API contract, and README are synchronized.
-
-### 2. Start the job-launch extra-vars editor empty
-
-Remove the prepopulated `{}` from the job-template launch form's manual
-`extra_vars` editor so users can immediately type or paste JSON or YAML.
+The bordered `extra_vars` box at the bottom of job details is too prominent.
+Remove its border and incorporate the recorded job variables into the normal
+scrollable job details as a labeled YAML mapping, using the surrounding detail
+styling.
 
 Acceptance criteria:
 
-- Initialize the editor with empty text and the cursor at the beginning each time
-  a new launch form is prepared. Keep survey defaults and template-default
-  merging unchanged.
-- Continue accepting JSON objects and YAML mappings through the existing parser
-  and validation. Treat blank or whitespace-only input as no manual overrides;
-  preserve required-variable checks and Prompt on launch restrictions.
-- Keep the JSON/YAML hint, multiline editing, paste handling, focus navigation,
-  and explicit Launch/Cancel controls working with an initially empty editor.
-- Add regression tests for the empty initial value/cursor, direct JSON and YAML
-  entry or paste without first clearing braces, and submission with blank input.
-- Update the launch documentation in `README.md` to remove the instruction to
-  clear the initial `{}` and describe the empty editor and JSON/YAML support.
+- Display `extra_vars` within job details without a separate bordered box. Keep
+  the label and YAML indentation readable in both supported themes.
+- Render sorted variable names, nested mappings and lists, numeric precision,
+  false/zero/null, blank strings, and multiline values correctly as YAML. Quote
+  keys and scalar values where needed to preserve their meaning.
+- Integrate with existing detail scrolling, wrapping, refresh, and terminal
+  resizing, including narrow terminals. Avoid duplicating the variable display.
+- Continue showing recorded execution values, including survey answers, with
+  clear empty, unavailable, unsupported, malformed, and oversized states.
+  Preserve password masking, token redaction, terminal-control sanitization,
+  decoding/display limits, and memory-only handling of variable values.
+- Keep this milestone focused on job details; retain the current job-template
+  variable display and launch-editor behavior.
+- Add regression tests for the borderless job display, YAML formatting and
+  value preservation, both themes, data states, and scrolling/resizing. Retain
+  existing variable security coverage and test any API representation changes.
+- Update `SPEC.md`, `docs/API_CONTRACT.md`, and `README.md` as needed to describe
+  the job YAML display and distinguish it from job-template variables.
 
-Implemented and verified offline: each launch form starts with empty manual
-extra-vars text and its cursor at the beginning. Existing JSON/YAML parsing,
-survey defaults, template-default precedence, and launch validation are retained.
-Regression tests cover reopening the form, direct typing/paste, multiline input,
-and blank/whitespace submission; real-client launch tests cover both formats and
-blank input in both connection modes. `go test ./...` and `go vet ./...` pass.
-README, specification, and API contract describe the empty editor.
+Implemented and verified offline: recorded job variables appear once as a
+borderless `extra_vars` row within Job details. The API supplies sanitized YAML
+with sorted names, exact numeric text, nested mappings/lists, safe quoting, and
+multiline values. The detail table preserves YAML indentation and spaces while
+wrapping and scrolling. Template boxes and launch-editor behavior are retained.
+Regression tests cover both API prefixes, both themes, safe data states, numeric
+precision, special keys, blank strings/lines, masking/redaction, display limits,
+refresh, scrolling, and resizing. `go test ./...` and `go vet ./...` pass.
+README, specification, and API contract describe the new display.
 
 For each implementation milestone: format changed Go files with `gofmt -w`, run
 `go test ./...` and `go vet ./...`, review changes for unintended scope, and update

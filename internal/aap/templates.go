@@ -143,7 +143,7 @@ func (c *Client) Template(ctx context.Context, ref TemplateRef) (TemplateDetails
 		LastJobRun: c.cleanLabel(w.LastJobRun), NextJobRun: c.cleanLabel(w.NextJobRun), LastJobFailed: w.LastJobFailed}
 	d.Launch = Capability{Unavailable, "Launch is not supported for this template type"}
 	if ref.Type == PlaybookTemplate {
-		d.ExtraVars = c.variableMapping(w.ExtraVars)
+		d.ExtraVars = c.variableMapping(w.ExtraVars, false)
 		d.startPermission = w.Summary.UserCapabilities.Start
 		d.launch, d.survey = w.Related["launch"], w.Related["survey_spec"]
 		for _, item := range []struct{ link, suffix string }{{d.launch, "launch/"}, {d.survey, "survey_spec/"}} {

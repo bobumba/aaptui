@@ -10,6 +10,7 @@ import (
 
 type detailField struct {
 	label, value string
+	preformatted bool
 }
 
 // detailFields keeps data separate from styling and optional values distinct
@@ -264,7 +265,7 @@ func (m *Model) details(width int) []string {
 		}
 		fields.flag("Approval timed out", d.TimedOut)
 		fields.flag("Event processing finished", d.EventProcessingFinished)
-		variables, showVariables = d.ExtraVars, true
+		fields = append(fields, detailField{label: "extra_vars", value: jobVariableDetails(d.ExtraVars), preformatted: true})
 	}
 	if m.screen == jobScreen {
 		fields = append(m.capabilityFields(), fields...)

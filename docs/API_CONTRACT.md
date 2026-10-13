@@ -48,6 +48,15 @@ recursively, and token-redacted before exposure to the TUI. Preserve server mask
 do not persist values or include them in errors. Synthetic tests exercise both
 API prefixes; no deployed AAP validation is available.
 
+The API layer also supplies a sanitized YAML mapping for recorded job variables.
+Use explicit numeric nodes to preserve exact numeric text, sorted mapping keys,
+quoted strings where needed, and block scalars for multiline values where
+possible. Quote literal `<<` keys to prevent interpretation as YAML merge keys.
+Apply the 64 KiB display budget to the final redacted YAML as well as the existing
+per-variable representation. Unavailable data exposes neither partial values nor
+partial YAML. This formatting change does not change detail requests or the
+reviewed server contract.
+
 ### Job-template extra variables
 
 Reviewed 2026-10-12 against the same pinned AWX 24.6.1
@@ -57,15 +66,17 @@ validates it with `vars_validate_or_raise`. Read configured variables from
 `job_templates/{id}/`; do not fetch survey definitions or launch requirements to
 populate this display. This is separate from a job's recorded execution values.
 Accept mapping strings (JSON or YAML) and defensively accept objects, using the
-same sanitized display representation, budgets, numeric precision, and safe
+same sanitized per-variable representation, budgets, numeric precision, and safe
 failure states as job variables. Preserve any masks returned by the server;
 template variables are not guaranteed to have survey-password masking. Do not
 recover passwords or persist values. Other template/resource variables remain
 excluded. Synthetic tests cover both prefixes; AAP 2.6 remains unverified.
 
-Job and job-template detail views enclose all variables and any data-state
-message in one labeled, theme-aware box, with wrapping and detail scrolling.
-Extremely narrow terminals omit decoration to retain readable content.
+Job details render the recorded mapping as a borderless `extra_vars` row, spanning
+the full table width with YAML indentation and spaces preserved when wrapping.
+Job-template details retain their labeled, theme-aware box and existing value
+formatting. Both displays use detail scrolling; extremely narrow terminals omit
+template-box decoration to retain readable content.
 
 ### Collections
 

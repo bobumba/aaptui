@@ -9,6 +9,19 @@ import (
 	"aaptui/internal/aap"
 )
 
+func jobVariableDetails(vars *aap.JobVariables) string {
+	switch {
+	case vars == nil:
+		return "Not supported for this job type"
+	case vars.UnavailableReason != "":
+		return "Unavailable · " + vars.UnavailableReason
+	case vars.YAML == "":
+		return "No recorded variables"
+	default:
+		return vars.YAML
+	}
+}
+
 // variableBox uses the same scrolling as other details. Decoration yields on
 // extremely narrow terminals so the content still has room for wide graphemes.
 func (m *Model) variableBox(vars *aap.JobVariables, width int, template bool) []string {

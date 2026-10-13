@@ -100,24 +100,26 @@ label/value tables with bold, theme-aware colored labels. Wide terminals show
 two field/value pairs per row; narrower terminals use one pair per row, with a
 stacked layout at very small widths. Descriptions and multiline values span the
 full table width. Long labels and values wrap, and all detail rows can be scrolled.
-Job views show **Capabilities**, **Job details**, and a **Survey / Extra variables**
-box. Job-template details show configured variables in an **Extra variables** box.
-Each view groups all variables into one bordered box with theme-aware styling.
-The box wraps within the terminal width and scrolls with other details; extremely
-narrow terminals omit its border to leave room for content.
+Job views show **Capabilities** and **Job details**, with recorded variables in
+an **extra_vars** row rendered as YAML without a border. The YAML spans the full
+table width and preserves indentation and spaces when wrapping. Job-template
+details show configured variables in an **Extra variables** box with theme-aware
+styling. The box wraps within the terminal width and scrolls with other details;
+extremely narrow terminals omit its border to leave room for content.
 Capabilities list output
 (`o`), workflow children (`w`), cancellation (`c`), and relaunch (`R`) with their
 availability and reasons. Execution settings and other job fields appear under
 Job details. Cancellation still requires confirmation.
 
-The Survey / Extra variables box shows the values recorded for playbook jobs,
+The extra_vars row shows the values recorded for playbook jobs,
 workflow jobs, ad hoc commands, and system jobs. Survey answers and other variables
 appear together, sorted by variable name; current template/survey definitions are not
-used to infer their origins. Nested values use formatted JSON, and multiline
-answers preserve line breaks. Empty strings show `""`; false, zero, and null remain
-visible. Job-template variables use the same formatting and limits, showing the
-template's configured values rather than recorded execution values or survey
-defaults. Use arrows or `j`/`k` to scroll the box and `r` to refresh details (focus
+used to infer their origins. Nested mappings and lists use indented YAML, and
+multiline answers use YAML block scalars where possible. Empty strings show `""`;
+false, zero, null, and precise numbers remain visible. Job-template variables
+retain formatted JSON for nested values and line breaks for multiline answers,
+showing the template's configured values with the same limits. Use arrows or
+`j`/`k` to scroll details and `r` to refresh them (focus
 details with Tab when the template's job table is shown). Empty, unavailable,
 malformed, oversized, and unsupported data have distinct messages; other job fields remain
 readable. Server password masks are retained and the configured token is redacted

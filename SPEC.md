@@ -169,22 +169,26 @@ false/zero values and handle absent fields without inventing data. Do not displa
 credential contents, variables outside jobs and job templates, environments, module
 arguments, or artifacts. Sanitize external text and redact the configured token.
 
-Job views place common and type-specific fields under Job details. A separate
-Survey / Extra variables box displays recorded `extra_vars` for playbook
+Job views place common and type-specific fields under Job details. A borderless
+`extra_vars` row displays the recorded mapping as YAML for playbook
 jobs, workflow jobs, ad hoc commands, and system jobs, including survey answers.
 Use execution values rather than current template defaults or survey definitions;
 do not infer variable origins. Show sorted names and readable values, preserving
 nested structures, number precision, false/zero/null, blank strings, and multiline
-answers. Preserve server password masks and sanitize/redact recursively before
-display. Keep values in memory only, with 64 KiB decoded-input and display budgets
-and at most 64 nesting levels. Distinguish empty, unavailable, malformed,
+answers. Use indented YAML mappings and lists, quote keys and scalars as needed
+to preserve their types, and use block scalars for multiline answers where
+possible. The YAML spans the full table width, with indentation and spaces
+preserved when wrapping. Preserve server password masks and sanitize/redact
+recursively before display. Keep values in memory only, with 64 KiB decoded-input
+and display budgets and at most 64 nesting levels. Distinguish empty, unavailable, malformed,
 oversized, and unsupported data without hiding other job fields.
 
 Job-template details display configured `extra_vars` in an Extra variables box,
 using the same decoding, display limits, and sanitization as recorded job values.
 Do not fetch current survey definitions or launch requirements for this display.
-Group all variables or the data-state message inside one clearly labeled,
-theme-aware bordered box in each view. Wrap its contents to the available width
+Retain formatted JSON for nested template values and line breaks for multiline
+answers. Group template variables or the data-state message inside one clearly
+labeled, theme-aware bordered box. Wrap its contents to the available width
 and use existing detail scrolling and resizing; omit decoration on extremely
 narrow terminals. Keep other resource variables excluded.
 In job-template details, `r` refreshes the focused details or job table without
