@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 type ConnectionMode string
@@ -33,14 +34,30 @@ func (s Secrets) Token() string    { return s.token }
 func (s Secrets) String() string   { return "[redacted]" }
 func (s Secrets) GoString() string { return "[redacted]" }
 
-type fileSettings struct {
-	URL       *string         `json:"url"`
-	Mode      *ConnectionMode `json:"connection_mode"`
-	TLSVerify *bool           `json:"tls_verify"`
+// Connection keeps a saved URL's settings and private credentials together.
+// Err marks a connection unavailable without exposing invalid input.
+type Connection struct {
+	Settings Settings
+	Secrets  Secrets
+	Err      error
+}
+
+type connectionSettings struct {
+	URL       *string         `json:"url,omitempty"`
+	Mode      *ConnectionMode `json:"connection_mode,omitempty"`
+	TLSVerify *bool           `json:"tls_verify,omitempty"`
 	Token     *string         `json:"token,omitempty"`
 }
 
+type fileSettings struct {
+	connectionSettings
+	Connections []connectionSettings `json:"connections,omitempty"`
+}
+
 func Validate(s Settings) error {
+	if strings.ContainsFunc(s.URL, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) {
+		return fmt.Errorf("server URL must not contain terminal control characters")
+	}
 	u, err := url.Parse(s.URL)
 	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" || u.Opaque != "" || (u.Path != "" && u.Path != "/") || strings.Contains(s.URL, "#") {
 		return fmt.Errorf("server URL must be an HTTP or HTTPS origin without credentials, query, fragment, or path")
@@ -74,10 +91,92 @@ func LoadForSetup(path string) (Settings, Secrets, error) {
 	return loadForSetup(path, os.LookupEnv, os.UserHomeDir, os.Open)
 }
 
+// LoadConnections returns selectable URLs, with the effective file/environment
+// connection first. Overrides affect only that entry; other saved origins retain
+// their own settings and credentials. Missing URLs are omitted from the list.
+func LoadConnections(path string) ([]Connection, error) {
+	connections, _, err := loadConnections(path, os.LookupEnv, os.UserHomeDir, os.Open)
+	return connections, err
+}
+
 func loadForSetup(path string, env func(string) (string, bool), home func() (string, error), open func(string) (*os.File, error)) (Settings, Secrets, error) {
-	s := Settings{Mode: Gateway, TLSVerify: true}
-	fail := func(message string) (Settings, Secrets, error) {
-		return Settings{}, Secrets{}, fmt.Errorf("configuration: %s", message)
+	_, effective, err := loadConnections(path, env, home, open)
+	if err != nil {
+		return Settings{}, Secrets{}, err
+	}
+	if effective.Err != nil {
+		return Settings{}, Secrets{}, effective.Err
+	}
+	return effective.Settings, effective.Secrets, nil
+}
+
+func fileConnections(values fileSettings) []connectionSettings {
+	connections := append([]connectionSettings(nil), values.Connections...)
+	if values.URL != nil && strings.TrimSpace(*values.URL) != "" {
+		connections = append([]connectionSettings{values.connectionSettings}, connections...)
+	}
+	for i := range connections {
+		if connections[i].Mode == nil {
+			connections[i].Mode = values.Mode
+		}
+		if connections[i].TLSVerify == nil {
+			connections[i].TLSVerify = values.TLSVerify
+		}
+	}
+	return connections
+}
+
+func applySettings(s Settings, values connectionSettings) Settings {
+	if values.URL != nil {
+		s.URL = *values.URL
+	}
+	if values.Mode != nil {
+		s.Mode = *values.Mode
+	}
+	if values.TLSVerify != nil {
+		s.TLSVerify = *values.TLSVerify
+	}
+	return s
+}
+
+// mergeSettings retains field presence when combining non-secret overlays.
+func mergeSettings(base, overlay connectionSettings) connectionSettings {
+	if overlay.URL != nil {
+		base.URL = overlay.URL
+	}
+	if overlay.Mode != nil {
+		base.Mode = overlay.Mode
+	}
+	if overlay.TLSVerify != nil {
+		base.TLSVerify = overlay.TLSVerify
+	}
+	return base
+}
+
+func connection(s Settings, token string) Connection {
+	c := Connection{Settings: s}
+	check := s
+	if strings.TrimSpace(check.URL) == "" {
+		c.Settings.URL = ""
+		check.URL = "https://missing.invalid"
+	}
+	if err := Validate(check); err != nil {
+		c.Err = fmt.Errorf("configuration: %w", err)
+		return c
+	}
+	if strings.TrimSpace(token) != "" {
+		if err := ValidateToken(token); err != nil {
+			c.Err = fmt.Errorf("configuration: %w", err)
+			return c
+		}
+		c.Secrets = Secrets{token: token}
+	}
+	return c
+}
+
+func loadConnections(path string, env func(string) (string, bool), home func() (string, error), open func(string) (*os.File, error)) ([]Connection, Connection, error) {
+	fail := func(message string) ([]Connection, Connection, error) {
+		return nil, Connection{}, fmt.Errorf("configuration: %s", message)
 	}
 	h, err := home()
 	if err != nil || !filepath.IsAbs(h) {
@@ -96,11 +195,14 @@ func loadForSetup(path string, env func(string) (string, bool), home func() (str
 	if err != nil {
 		return fail("cannot locate settings file")
 	}
-	var saved fileSettings
 	sources := []string{privatePath}
 	if path != privatePath {
 		sources = append(sources, path)
 	}
+	defaults := Settings{Mode: Gateway, TLSVerify: true}
+	s := defaults
+	var saved, entries []connectionSettings
+	var selected connectionSettings
 	for _, source := range sources {
 		values, err := readSettings(source, open)
 		if err != nil {
@@ -109,69 +211,111 @@ func loadForSetup(path string, env func(string) (string, bool), home func() (str
 			}
 			continue
 		}
-		if values.Token != nil {
+		records := fileConnections(values)
+		// Check token fields even in a legacy file with a missing URL.
+		for _, record := range append([]connectionSettings{values.connectionSettings}, values.Connections...) {
+			if record.Token == nil {
+				continue
+			}
 			if source != privatePath {
 				return fail("tokens are allowed only in the private home configuration")
 			}
 			if err := privateFile(source); err != nil {
 				return fail("credential storage must use a private directory (0700) and regular file (0600)")
 			}
-			if strings.TrimSpace(*values.Token) != "" {
-				if values.URL == nil || Validate(Settings{URL: *values.URL, Mode: Gateway}) != nil {
-					return fail("a saved token requires a valid server URL")
-				}
-				if err := ValidateToken(*values.Token); err != nil {
-					return fail(err.Error())
-				}
+			if strings.TrimSpace(*record.Token) != "" && record.URL == nil {
+				return fail("a saved token requires a valid server URL")
 			}
 		}
 		if source == privatePath {
-			saved = values
+			saved = records
+			if values.URL == nil {
+				defaults = applySettings(defaults, values.connectionSettings)
+			}
 		}
-		if values.URL != nil {
-			s.URL = *values.URL
+		if source != privatePath {
+			selected = values.connectionSettings
+			if len(records) > 0 {
+				// The selected file's first connection supplies its effective
+				// overrides; other entries remain separately selectable.
+				selected = mergeSettings(selected, records[0])
+			}
 		}
-		if values.Mode != nil {
-			s.Mode = *values.Mode
-		}
-		if values.TLSVerify != nil {
-			s.TLSVerify = *values.TLSVerify
+		entries = append(records, entries...)
+		s = applySettings(s, values.connectionSettings)
+		if len(records) > 0 {
+			s = applySettings(s, records[0])
 		}
 	}
 	if v, ok := env("AAP_URL"); ok {
 		s.URL = v
 	}
+	// Resolve this origin's settings before applying its overrides. A foreign
+	// URL never inherits another saved connection's mode or TLS preference.
+	effectiveURL := s.URL
+	s = defaults
+	for _, record := range saved {
+		if record.URL != nil && SameOrigin(effectiveURL, *record.URL) {
+			s = applySettings(s, record)
+			break
+		}
+	}
+	s = applySettings(s, selected)
+	s.URL = effectiveURL
 	if v, ok := env("AAP_CONNECTION_MODE"); ok {
 		s.Mode = ConnectionMode(v)
 	}
+	var overrideErr error
 	if v, ok := env("AAP_TLS_VERIFY"); ok {
-		b, e := strconv.ParseBool(v)
-		if e != nil {
-			return fail("AAP_TLS_VERIFY must be a boolean")
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			overrideErr = fmt.Errorf("configuration: AAP_TLS_VERIFY must be a boolean")
+		} else {
+			s.TLSVerify = b
 		}
-		s.TLSVerify = b
 	}
-	check := s
-	if strings.TrimSpace(check.URL) == "" {
-		s.URL = ""
-		check.URL = "https://missing.invalid"
+	tokenFor := func(url string) string {
+		for _, record := range saved {
+			if record.URL != nil && SameOrigin(url, *record.URL) && record.Token != nil {
+				return *record.Token
+			}
+		}
+		return ""
 	}
-	if err := Validate(check); err != nil {
-		return fail(err.Error())
-	}
-	token := ""
-	if saved.Token != nil && saved.URL != nil && SameOrigin(s.URL, *saved.URL) {
-		token = *saved.Token
-	}
+	token := tokenFor(s.URL)
 	if v, ok := env("AAP_TOKEN"); ok {
 		token = v
 	}
-	if strings.TrimSpace(token) == "" {
-		token = ""
-	} else if err := ValidateToken(token); err != nil {
-		return fail(err.Error())
+	effective := connection(s, token)
+	if overrideErr != nil {
+		effective.Err = overrideErr
 	}
-	return s, Secrets{token: token}, nil
+	var result []Connection
+	if effective.Settings.URL != "" {
+		result = append(result, effective)
+	}
+	for _, record := range entries {
+		settings := defaults
+		for _, private := range saved {
+			if record.URL != nil && private.URL != nil && SameOrigin(*record.URL, *private.URL) {
+				settings = applySettings(settings, private)
+				break
+			}
+		}
+		settings = applySettings(settings, record)
+		duplicate := false
+		for _, c := range result {
+			if settings.URL == c.Settings.URL || SameOrigin(settings.URL, c.Settings.URL) {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+		result = append(result, connection(settings, tokenFor(settings.URL)))
+	}
+	return result, effective, nil
 }
 
 func readSettings(path string, open func(string) (*os.File, error)) (fileSettings, error) {
@@ -196,8 +340,35 @@ func readSettings(path string, open func(string) (*os.File, error)) (fileSetting
 		return fileSettings{}, fmt.Errorf("invalid settings file")
 	}
 	for key, value := range fields {
-		if (key != "url" && key != "token" && key != "connection_mode" && key != "tls_verify") || string(bytes.TrimSpace(value)) == "null" {
+		if (key != "url" && key != "token" && key != "connection_mode" && key != "tls_verify" && key != "connections") || string(bytes.TrimSpace(value)) == "null" {
 			return fileSettings{}, fmt.Errorf("invalid settings field")
+		}
+	}
+	if raw, ok := fields["connections"]; ok {
+		if values.URL != nil || values.Token != nil {
+			return fileSettings{}, fmt.Errorf("cannot mix legacy credentials and connections")
+		}
+		var records []map[string]json.RawMessage
+		if json.Unmarshal(raw, &records) != nil {
+			return fileSettings{}, fmt.Errorf("invalid connection list")
+		}
+		for i, record := range records {
+			if record == nil || record["url"] == nil || values.Connections[i].URL == nil {
+				return fileSettings{}, fmt.Errorf("saved connections require a URL")
+			}
+			if strings.TrimSpace(*values.Connections[i].URL) == "" {
+				return fileSettings{}, fmt.Errorf("saved connections require a URL")
+			}
+			for j := 0; j < i; j++ {
+				if SameOrigin(*values.Connections[i].URL, *values.Connections[j].URL) {
+					return fileSettings{}, fmt.Errorf("duplicate saved connection origin")
+				}
+			}
+			for _, value := range record {
+				if string(bytes.TrimSpace(value)) == "null" {
+					return fileSettings{}, fmt.Errorf("invalid settings field")
+				}
+			}
 		}
 	}
 	return *values, nil

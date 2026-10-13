@@ -18,83 +18,92 @@ import (
 )
 
 func TestStartupConfigurationChoices(t *testing.T) {
-	for _, current := range []string{"complete", "missing URL", "missing token", "missing both", "invalid"} {
+	for _, current := range []string{"complete", "missing token", "empty", "invalid"} {
 		for _, createNew := range []bool{false, true} {
+			if current == "empty" && !createNew {
+				continue
+			}
 			t.Run(fmt.Sprintf("%s/new=%t", current, createNew), func(t *testing.T) {
+				startupTestHome(t)
 				s := config.Settings{URL: "https://current.example", Mode: config.Gateway, TLSVerify: true}
-				token := "current-token"
-				var loadErr error
-				switch current {
-				case "missing URL":
-					s.URL = ""
-				case "missing token":
-					token = ""
-				case "missing both":
-					s.URL, token = "", ""
-				case "invalid":
-					loadErr = errors.New("configuration: invalid settings")
+				if err := config.SaveCredentials(s, "current-token"); err != nil {
+					t.Fatal(err)
 				}
-				newSettings := config.Settings{URL: "https://new.example", Mode: config.Direct, TLSVerify: false}
-				choices, newPrompts, currentPrompts, saves := 0, 0, 0, 0
+				connections, err := config.LoadConnections("")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if current == "missing token" {
+					connections[0].Secrets = config.Secrets{}
+				}
+				if current == "invalid" {
+					connections[0].Err = errors.New("configuration: invalid settings")
+				}
+				if current == "empty" {
+					connections = nil
+				}
+				fresh := config.Settings{URL: "https://new.example", Mode: config.Direct, TLSVerify: false}
+				choices, prompts, saves := 0, 0, 0
 				deps := startupDependencies{
 					interactive: true,
-					load: func(path string) (config.Settings, string, error) {
+					load: func(path string) ([]config.Connection, error) {
 						if path != "selected.json" {
 							t.Fatal("selected path was lost")
 						}
-						return s, token, loadErr
+						return connections, nil
 					},
-					choose: func(_ context.Context, canLoad bool, status string) (bool, error) {
+					choose: func(_ context.Context, entries []config.Connection, status string) (int, error) {
 						choices++
-						if canLoad != (current != "invalid" && current != "missing both") || status == "" || strings.Contains(status, token) && token != "" {
-							t.Fatal("incorrect choice availability or unsafe status")
+						if len(entries) != len(connections) || status == "" || strings.Contains(status, "current-token") {
+							t.Fatal("incorrect or unsafe menu")
 						}
-						return createNew, nil
+						if createNew {
+							return len(entries), nil
+						}
+						return 0, nil
 					},
-					promptNew: func(context.Context) (config.Settings, string, loginCredentials, error) {
-						newPrompts++
-						return newSettings, "new-token", loginCredentials{}, nil
+					promptNew: func(context.Context) (config.Settings, loginCredentials, error) {
+						prompts++
+						return fresh, loginCredentials{"new-user", "new-password"}, nil
 					},
 					prompt: func(_ context.Context, got config.Settings, needToken bool) (config.Settings, loginCredentials, error) {
-						currentPrompts++
-						if got != s || needToken != (token == "") {
-							t.Fatal("current settings were not retained")
+						prompts++
+						if got != s || !needToken {
+							t.Fatal("selected settings were lost")
 						}
-						got.URL = "https://current.example"
 						return got, loginCredentials{"user", "password"}, nil
 					},
-					createToken: func(context.Context, config.Settings, string, string) (string, error) { return "generated-token", nil },
-					verifyToken: func(_ context.Context, got config.Settings, gotToken string) error {
-						if createNew && (got != newSettings || gotToken != "new-token") {
-							t.Fatal("new setup reused current credentials")
+					createToken: func(_ context.Context, got config.Settings, user, password string) (string, error) {
+						if createNew && (got != fresh || user != "new-user" || password != "new-password") {
+							t.Fatal("new setup reused credentials")
 						}
-						return nil
+						return "generated-token", nil
 					},
 					saveCredentials: func(config.Settings, string) error { saves++; return nil },
 				}
-				got, gotToken, err := startConnection(context.Background(), "selected.json", deps)
+				got, token, err := startConnection(context.Background(), "selected.json", deps)
 				if choices != 1 {
 					t.Fatal("startup did not ask exactly once")
 				}
 				if current == "invalid" && !createNew {
-					if !errors.Is(err, loadErr) || newPrompts != 0 || currentPrompts != 0 || saves != 0 {
-						t.Fatal("invalid current configuration was used", err)
+					if !errors.Is(err, connections[0].Err) || prompts != 0 || saves != 0 {
+						t.Fatal("invalid connection was used", err)
 					}
 					return
 				}
-				if err != nil || gotToken == "" {
-					t.Fatal("startup failed", err)
+				if err != nil {
+					t.Fatal(err)
 				}
 				if createNew {
-					if got != newSettings || gotToken != "new-token" || newPrompts != 1 || currentPrompts != 0 || saves != 1 {
-						t.Fatal("new configuration was not used")
+					if got != fresh || token != "generated-token" || prompts != 1 || saves != 1 {
+						t.Fatal("new connection was not used")
 					}
 				} else if current == "complete" {
-					if got != s || gotToken != token || newPrompts != 0 || currentPrompts != 0 || saves != 0 {
-						t.Fatal("complete current configuration was changed")
+					if got != s || token != "current-token" || prompts != 0 || saves != 0 {
+						t.Fatal("complete connection was changed")
 					}
-				} else if newPrompts != 0 || currentPrompts != 1 || saves != 1 {
-					t.Fatal("missing current settings were not prompted")
+				} else if got != s || token != "generated-token" || prompts != 1 || saves != 1 {
+					t.Fatal("missing credentials were not prompted")
 				}
 			})
 		}
@@ -111,26 +120,26 @@ func TestStartupChoiceCancellationAndNoninteractive(t *testing.T) {
 			}
 			deps := startupDependencies{
 				interactive: scenario != "noninteractive",
-				load: func(string) (config.Settings, string, error) {
+				load: func(string) ([]config.Connection, error) {
 					if scenario == "noninteractive" || scenario == "cancelled context" {
 						t.Fatal("loaded settings before checking terminal/context")
 					}
-					return config.Settings{URL: "https://current.example", Mode: config.Gateway}, "current-token", nil
+					return []config.Connection{{Settings: config.Settings{URL: "https://current.example", Mode: config.Gateway}}}, nil
 				},
-				choose: func(context.Context, bool, string) (bool, error) {
+				choose: func(context.Context, []config.Connection, string) (int, error) {
 					if scenario == "choice cancellation" {
-						return false, context.Canceled
+						return -1, context.Canceled
 					}
 					if scenario == "cancel after choice" {
 						cancel()
 					}
-					return true, nil
+					return 1, nil
 				},
-				promptNew: func(context.Context) (config.Settings, string, loginCredentials, error) {
+				promptNew: func(context.Context) (config.Settings, loginCredentials, error) {
 					if scenario != "new prompt cancellation" {
 						t.Fatal("prompted after cancellation")
 					}
-					return config.Settings{}, "", loginCredentials{}, context.Canceled
+					return config.Settings{}, loginCredentials{}, context.Canceled
 				},
 			}
 			_, _, err := startConnection(ctx, "", deps)
@@ -146,110 +155,132 @@ func TestStartupChoiceCancellationAndNoninteractive(t *testing.T) {
 }
 
 func TestConfigurationChoiceNavigation(t *testing.T) {
-	enter := tea.KeyPressMsg{Code: tea.KeyEnter}
-	for _, canLoad := range []bool{true, false} {
-		m := newConfigurationChoice(canLoad, "Connection status")
-		if (m.selected == 0) != canLoad {
-			t.Fatal("unexpected default choice")
-		}
-		m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-		_, cmd := m.Update(enter)
-		if m.done != canLoad || (cmd != nil) != canLoad {
-			t.Fatal("unavailable current configuration can be selected")
-		}
-		m = newConfigurationChoice(canLoad, "Connection status")
-		m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-		m.Update(enter)
-		if !m.done || m.selected != 1 || m.View().Content != "" {
-			t.Fatal("new choice was not selected")
-		}
+	entries := []config.Connection{
+		{Settings: config.Settings{URL: "https://one.example"}},
+		{Settings: config.Settings{URL: "https://two.example"}},
+		{Settings: config.Settings{URL: "https://user:secret@bad.example"}, Err: errors.New("invalid")},
 	}
-	m := newConfigurationChoice(true, "Connection status")
-	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.selected != 1 {
-		t.Fatal("Tab did not change selection")
+	m := newConfigurationChoice(entries, "Choose URL")
+	if strings.Contains(m.View().Content, "secret") || strings.Contains(m.View().Content, "Load current configuration") || !strings.Contains(m.View().Content, entries[1].Settings.URL) {
+		t.Fatal("unsafe or missing URL list")
 	}
-	m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyDown}, {Code: tea.KeyTab}, {Code: tea.KeyTab, Mod: tea.ModShift}, {Code: tea.KeyUp}} {
+		m.Update(key)
+	}
 	if m.selected != 0 {
-		t.Fatal("Shift-Tab did not return to current configuration")
+		t.Fatal("navigation did not restore selection")
 	}
-	m.Update(tea.WindowSizeMsg{Width: 12})
-	for _, line := range strings.Split(m.View().Content, "\n") {
-		if ansi.StringWidth(line) > 12 {
-			t.Fatal("choice exceeds terminal width")
-		}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil || m.done {
+		t.Fatal("invalid entry selected")
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.done || m.selected != len(entries) || m.View().Content != "" {
+		t.Fatal("new setup did not complete")
 	}
 	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEscape}, {Code: 'c', Mod: tea.ModCtrl}, {Code: 'd', Mod: tea.ModCtrl}} {
-		m := newConfigurationChoice(true, "Ready")
+		m := newConfigurationChoice(entries, "Ready")
 		_, cmd := m.Update(key)
 		if cmd == nil || m.done {
 			t.Fatal("choice cancellation failed")
 		}
 	}
+	m = newConfigurationChoice(nil, "No URLs")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.done || m.selected != 0 {
+		t.Fatal("empty list did not offer new setup")
+	}
+	m = newConfigurationChoice(entries[:1], "Ready")
+	if !strings.Contains(m.View().Content, entries[0].Settings.URL) {
+		t.Fatal("single URL was hidden")
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.done || m.selected != 0 {
+		t.Fatal("URL selection did not complete")
+	}
+}
+
+func TestConfigurationChoiceScrolling(t *testing.T) {
+	var entries []config.Connection
+	for i := 0; i < 30; i++ {
+		entries = append(entries, config.Connection{Settings: config.Settings{URL: fmt.Sprintf("https://aap-%d.example", i)}})
+	}
+	m := newConfigurationChoice(entries, "Ready")
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
+	for i := 0; i < 29; i++ {
+		m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	if !strings.Contains(m.View().Content, "> https://aap-29.example") {
+		t.Fatal("focused URL is not visible")
+	}
+	for _, size := range []tea.WindowSizeMsg{{Width: 12, Height: 6}, {Width: 8, Height: 2}, {Width: 1, Height: 1}} {
+		m.Update(size)
+		lines := strings.Split(m.View().Content, "\n")
+		if len(lines) > size.Height {
+			t.Fatal("menu exceeds terminal height")
+		}
+		for _, line := range lines {
+			if ansi.StringWidth(line) > size.Width {
+				t.Fatal("menu exceeds terminal width")
+			}
+		}
+	}
 }
 
 func TestNewConnectionPrompt(t *testing.T) {
-	for _, scenario := range []string{"gateway login", "gateway token", "direct token"} {
-		t.Run(scenario, func(t *testing.T) {
-			m := newConfigurationPrompt()
-			enter := func(text string, next int) {
-				t.Helper()
-				m.Update(tea.PasteMsg{Content: text})
+	for _, mode := range []config.ConnectionMode{config.Gateway, config.Direct} {
+		for _, tlsInput := range []string{"", "false"} {
+			t.Run(string(mode)+"/TLS="+tlsInput, func(t *testing.T) {
+				m := newConfigurationPrompt()
+				enter := func(text string, next int) {
+					t.Helper()
+					m.Update(tea.PasteMsg{Content: text})
+					m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+					if m.field != next || m.message != "" {
+						t.Fatal("unexpected prompt field", m.field, m.message)
+					}
+				}
+				enter("https://new.example", fieldMode)
+				modeInput := string(mode)
+				if mode == config.Gateway {
+					modeInput = ""
+				}
+				enter(modeInput, fieldTLS)
+				enter(tlsInput, fieldUsername)
+				if m.settings.Mode != mode || m.settings.TLSVerify != (tlsInput == "") {
+					t.Fatal("connection settings were not retained")
+				}
+				if !strings.Contains(m.View().Content, "Username") || strings.Contains(m.View().Content, "API token") {
+					t.Fatal("new configuration did not request credentials")
+				}
+				enter("alice", fieldPassword)
+				m.Update(tea.PasteMsg{Content: "private-secret"})
+				if strings.Contains(m.View().Content, "private-secret") || !strings.Contains(m.View().Content, "***") {
+					t.Fatal("secret entry was not masked")
+				}
+				m.Update(tea.WindowSizeMsg{Width: 12})
+				for _, line := range strings.Split(m.View().Content, "\n") {
+					if ansi.StringWidth(line) > 12 {
+						t.Fatal("new connection prompt exceeds terminal width")
+					}
+				}
 				m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-				if m.field != next || m.message != "" {
-					t.Fatal("unexpected prompt field", m.field, m.message)
+				if !m.done || m.input != "" || m.View().Content != "" {
+					t.Fatal("new connection prompt did not finish")
 				}
-			}
-			enter("https://new.example", fieldMode)
-			mode := ""
-			if scenario == "direct token" {
-				mode = "direct"
-			}
-			enter(mode, fieldTLS)
-			if scenario == "direct token" {
-				enter("false", fieldToken)
-				if m.settings.Mode != config.Direct || m.settings.TLSVerify || !strings.Contains(m.View().Content, "existing token") {
-					t.Fatal("direct settings or explanation missing")
+				if m.login.username != "alice" || m.login.password != "private-secret" {
+					t.Fatal("login entry did not collect credentials")
 				}
-			} else {
-				enter("", fieldAuthentication)
-				if m.settings.Mode != config.Gateway || !m.settings.TLSVerify {
-					t.Fatal("gateway defaults changed")
-				}
-				if scenario == "gateway login" {
-					enter("", fieldUsername)
-					enter("alice", fieldPassword)
-				} else {
-					enter("token", fieldToken)
-				}
-			}
-			secretField := m.field
-			m.Update(tea.PasteMsg{Content: "private-secret"})
-			if strings.Contains(m.View().Content, "private-secret") || !strings.Contains(m.View().Content, "***") {
-				t.Fatal("secret entry was not masked")
-			}
-			m.Update(tea.WindowSizeMsg{Width: 12})
-			for _, line := range strings.Split(m.View().Content, "\n") {
-				if ansi.StringWidth(line) > 12 {
-					t.Fatal("new connection prompt exceeds terminal width")
-				}
-			}
-			m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-			if !m.done || m.input != "" || m.View().Content != "" {
-				t.Fatal("new connection prompt did not finish")
-			}
-			if secretField == fieldToken && (m.token != "private-secret" || m.login != (loginCredentials{})) {
-				t.Fatal("token entry requested login")
-			}
-			if secretField == fieldPassword && (m.login.password != "private-secret" || m.token != "") {
-				t.Fatal("login entry did not collect credentials")
-			}
-		})
+			})
+		}
 	}
 }
 
 func TestNewConnectionPromptValidationAndCancellation(t *testing.T) {
-	for field, input := range map[int]string{fieldURL: "https://user:private@example.org", fieldMode: "private", fieldTLS: "private", fieldAuthentication: "private", fieldToken: "private token", fieldUsername: "user:private", fieldPassword: ""} {
+	for field, input := range map[int]string{fieldURL: "https://user:private@example.org", fieldMode: "private", fieldTLS: "private", fieldUsername: "user:private", fieldPassword: ""} {
 		m := newConfigurationPrompt()
 		m.field, m.input = field, input
 		m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -257,26 +288,15 @@ func TestNewConnectionPromptValidationAndCancellation(t *testing.T) {
 			t.Fatal("invalid field accepted or leaked into error", field)
 		}
 	}
-	for _, field := range []int{fieldURL, fieldMode, fieldTLS, fieldAuthentication, fieldUsername, fieldPassword, fieldToken} {
+	for _, field := range []int{fieldURL, fieldMode, fieldTLS, fieldUsername, fieldPassword} {
 		for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEscape}, {Code: 'c', Mod: tea.ModCtrl}, {Code: 'd', Mod: tea.ModCtrl}} {
 			m := newConfigurationPrompt()
-			m.field, m.input, m.token, m.login = field, "private", "private", loginCredentials{"private", "private"}
+			m.field, m.input, m.login = field, "private", loginCredentials{"private", "private"}
 			_, cmd := m.Update(key)
-			if cmd == nil || m.done || m.input != "" || m.token != "" || m.login != (loginCredentials{}) {
+			if cmd == nil || m.done || m.input != "" || m.login != (loginCredentials{}) {
 				t.Fatal("cancellation retained secrets", field)
 			}
 		}
-	}
-	m := newConfigurationPrompt()
-	m.field = fieldToken
-	m.Update(tea.PasteMsg{Content: strings.Repeat("x", 8193)})
-	if m.input != "" || m.message == "" {
-		t.Fatal("oversized token accepted")
-	}
-	m.Update(tea.PasteMsg{Content: strings.Repeat("x", 8192)})
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !m.done || len(m.token) != 8192 {
-		t.Fatal("maximum valid token rejected")
 	}
 }
 
@@ -295,148 +315,135 @@ func startupTestHome(t *testing.T) string {
 }
 
 func TestNewConfigurationAuthenticationAndReplacement(t *testing.T) {
-	for _, scenario := range []string{"gateway login", "gateway token", "direct token", "authentication failure", "cancel during authentication", "storage failure", "invalid current file", "missing selected file"} {
-		t.Run(scenario, func(t *testing.T) {
-			home := startupTestHome(t)
-			old := config.Settings{URL: "https://old.example", Mode: config.Gateway, TLSVerify: true}
-			if err := config.SaveCredentials(old, "old-secret"); err != nil {
-				t.Fatal(err)
-			}
-			privatePath := filepath.Join(home, ".config", "aaptui", "config.json")
-			selectedPath := filepath.Join(t.TempDir(), "settings.json")
-			selected := []byte(`{"url":"https://selected.example","connection_mode":"direct","tls_verify":false}`)
-			if scenario != "missing selected file" {
-				if err := os.WriteFile(selectedPath, selected, 0600); err != nil {
+	for _, mode := range []config.ConnectionMode{config.Gateway, config.Direct} {
+		for _, scenario := range []string{"successful login", "authentication failure", "cancel during authentication", "storage failure", "invalid current file", "missing selected file"} {
+			t.Run(string(mode)+"/"+scenario, func(t *testing.T) {
+				home := startupTestHome(t)
+				old := config.Settings{URL: "https://old.example", Mode: config.Gateway, TLSVerify: true}
+				if err := config.SaveCredentials(old, "old-secret"); err != nil {
 					t.Fatal(err)
 				}
-			}
-			if scenario == "invalid current file" {
-				if err := os.WriteFile(privatePath, []byte(`{"unknown":"old-secret"}`), 0600); err != nil {
+				privatePath := filepath.Join(home, ".config", "aaptui", "config.json")
+				selectedPath := filepath.Join(t.TempDir(), "settings.json")
+				selected := []byte(`{"url":"https://selected.example","connection_mode":"direct","tls_verify":false}`)
+				if scenario != "missing selected file" {
+					if err := os.WriteFile(selectedPath, selected, 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if scenario == "invalid current file" {
+					if err := os.WriteFile(privatePath, []byte(`{"unknown":"old-secret"}`), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				before, err := os.ReadFile(privatePath)
+				if err != nil {
 					t.Fatal(err)
 				}
-			}
-			before, err := os.ReadFile(privatePath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("AAP_URL", "https://environment.example")
-			t.Setenv("AAP_TOKEN", "environment-secret")
-			t.Setenv("AAP_CONNECTION_MODE", "direct")
-			t.Setenv("AAP_TLS_VERIFY", "false")
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-				if scenario == "gateway login" {
+				t.Setenv("AAP_URL", "https://environment.example")
+				t.Setenv("AAP_TOKEN", "environment-secret")
+				t.Setenv("AAP_CONNECTION_MODE", "direct")
+				t.Setenv("AAP_TLS_VERIFY", "false")
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				requests := 0
+				path := "/api/gateway/v1/tokens/"
+				if mode == config.Direct {
+					path = "/api/v2/tokens/"
+				}
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
 					user, password, ok := r.BasicAuth()
-					if r.Method != http.MethodPost || r.URL.Path != "/api/gateway/v1/tokens/" || !ok || user != "alice" || password != "login-secret" {
-						t.Error("unexpected gateway login request")
+					if r.Method != http.MethodPost || r.URL.Path != path || !ok || user != "alice" || password != "login-secret" {
+						t.Error("unexpected login request or reused old credentials")
+					}
+					if scenario == "cancel during authentication" {
+						cancel()
+					}
+					if scenario == "authentication failure" {
+						w.WriteHeader(http.StatusUnauthorized)
+						if _, err := fmt.Fprint(w, "new-secret login-secret old-secret"); err != nil {
+							t.Error(err)
+						}
+						return
 					}
 					w.WriteHeader(http.StatusCreated)
 					if _, err := fmt.Fprint(w, `{"token":"new-secret"}`); err != nil {
 						t.Error(err)
 					}
-					return
-				}
-				prefix := "/api/controller/v2/"
-				if scenario == "direct token" {
-					prefix = "/api/v2/"
-				}
-				if r.Method != http.MethodGet || r.URL.Path != prefix+"me/" || r.Header.Get("Authorization") != "Bearer new-secret" {
-					t.Error("unexpected token verification or reused old credentials")
-				}
-				if scenario == "cancel during authentication" {
-					cancel()
-				}
-				if scenario == "authentication failure" {
-					w.WriteHeader(http.StatusUnauthorized)
-					if _, err := fmt.Fprint(w, "new-secret login-secret old-secret"); err != nil {
-						t.Error(err)
+				}))
+				defer server.Close()
+				fresh := config.Settings{URL: server.URL, Mode: mode, TLSVerify: true}
+				deps := terminalStartupDependencies()
+				deps.interactive = true
+				deps.choose = func(_ context.Context, entries []config.Connection, status string) (int, error) {
+					if (scenario == "invalid current file" || scenario == "missing selected file") && len(entries) != 0 {
+						t.Fatal("invalid current file was available")
 					}
-					return
-				}
-				if _, err := fmt.Fprint(w, `{"count":1,"results":[{"id":1,"username":"alice"}]}`); err != nil {
-					t.Error(err)
-				}
-			}))
-			defer server.Close()
-			fresh := config.Settings{URL: server.URL, Mode: config.Gateway, TLSVerify: true}
-			if scenario == "direct token" {
-				fresh.Mode, fresh.TLSVerify = config.Direct, false
-			}
-			deps := terminalStartupDependencies()
-			deps.interactive = true
-			deps.choose = func(_ context.Context, canLoad bool, status string) (bool, error) {
-				if (scenario == "invalid current file" || scenario == "missing selected file") && canLoad {
-					t.Fatal("invalid current file was available")
-				}
-				for _, secret := range []string{"old-secret", "environment-secret"} {
-					if strings.Contains(status, secret) {
-						t.Fatal("choice status exposed credentials")
+					for _, secret := range []string{"old-secret", "environment-secret"} {
+						if strings.Contains(status, secret) {
+							t.Fatal("choice status exposed credentials")
+						}
 					}
+					return len(entries), nil
 				}
-				return true, nil
-			}
-			deps.promptNew = func(context.Context) (config.Settings, string, loginCredentials, error) {
-				if scenario == "gateway login" {
-					return fresh, "", loginCredentials{"alice", "login-secret"}, nil
+				deps.promptNew = func(context.Context) (config.Settings, loginCredentials, error) {
+					return fresh, loginCredentials{"alice", "login-secret"}, nil
 				}
-				return fresh, "new-secret", loginCredentials{}, nil
-			}
-			if scenario == "storage failure" {
-				deps.saveCredentials = func(config.Settings, string) error { return errors.New("save credentials: storage failure") }
-			}
-			got, token, err := startConnection(ctx, selectedPath, deps)
-			failed := scenario == "authentication failure" || scenario == "cancel during authentication" || scenario == "storage failure" || scenario == "invalid current file"
-			if failed {
-				if err == nil || token != "" {
-					t.Fatal("failed startup returned a usable connection")
+				if scenario == "storage failure" {
+					deps.saveCredentials = func(config.Settings, string) error { return errors.New("save credentials: storage failure") }
 				}
-				for _, secret := range []string{"old-secret", "new-secret", "login-secret", "environment-secret"} {
-					if strings.Contains(err.Error(), secret) {
-						t.Fatal("startup error exposed credentials")
+				got, token, err := startConnection(ctx, selectedPath, deps)
+				failed := scenario == "authentication failure" || scenario == "cancel during authentication" || scenario == "storage failure" || scenario == "invalid current file"
+				if failed {
+					if err == nil || token != "" {
+						t.Fatal("failed startup returned a usable connection")
 					}
+					for _, secret := range []string{"old-secret", "new-secret", "login-secret", "environment-secret"} {
+						if strings.Contains(err.Error(), secret) {
+							t.Fatal("startup error exposed credentials")
+						}
+					}
+				} else if err != nil || got != fresh || token != "new-secret" {
+					t.Fatal("new connection was overridden or failed", err)
 				}
-			} else if err != nil || got != fresh || token != "new-secret" {
-				t.Fatal("new connection was overridden or failed", err)
-			}
-			if requests != 1 {
-				t.Fatal("authentication was skipped or retried", requests)
-			}
-			after, readErr := os.ReadFile(privatePath)
-			if readErr != nil {
-				t.Fatal(readErr)
-			}
-			if failed {
-				if string(before) != string(after) {
-					t.Fatal("failed setup replaced existing credentials")
+				if requests != 1 {
+					t.Fatal("authentication was skipped or retried", requests)
 				}
-			} else {
-				for _, key := range []string{"AAP_URL", "AAP_TOKEN", "AAP_CONNECTION_MODE", "AAP_TLS_VERIFY"} {
-					if err := os.Unsetenv(key); err != nil {
-						t.Fatal(err)
+				after, readErr := os.ReadFile(privatePath)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				if failed {
+					if string(before) != string(after) {
+						t.Fatal("failed setup replaced existing credentials")
+					}
+				} else {
+					for _, key := range []string{"AAP_URL", "AAP_TOKEN", "AAP_CONNECTION_MODE", "AAP_TLS_VERIFY"} {
+						if err := os.Unsetenv(key); err != nil {
+							t.Fatal(err)
+						}
+					}
+					saved, secrets, err := config.Load("")
+					if err != nil || saved != fresh || secrets.Token() != "new-secret" || strings.Contains(string(after), "login-secret") || strings.Contains(string(after), "alice") {
+						t.Fatal("new connection did not round trip safely", err)
+					}
+					for path, mode := range map[string]os.FileMode{privatePath: 0600, filepath.Dir(privatePath): 0700} {
+						info, err := os.Stat(path)
+						if err != nil || info.Mode().Perm() != mode {
+							t.Fatal("new connection storage is not private", err)
+						}
 					}
 				}
-				saved, secrets, err := config.Load("")
-				if err != nil || saved != fresh || secrets.Token() != "new-secret" || strings.Contains(string(after), "login-secret") {
-					t.Fatal("new connection did not round trip safely", err)
-				}
-				for path, mode := range map[string]os.FileMode{privatePath: 0600, filepath.Dir(privatePath): 0700} {
-					info, err := os.Stat(path)
-					if err != nil || info.Mode().Perm() != mode {
-						t.Fatal("new connection storage is not private", err)
+				if scenario == "missing selected file" {
+					if _, err := os.Stat(selectedPath); !os.IsNotExist(err) {
+						t.Fatal("new setup wrote to the selected settings path", err)
 					}
+				} else if data, err := os.ReadFile(selectedPath); err != nil || string(data) != string(selected) {
+					t.Fatal("selected settings were changed", err)
 				}
-			}
-			if scenario == "missing selected file" {
-				if _, err := os.Stat(selectedPath); !os.IsNotExist(err) {
-					t.Fatal("new setup wrote to the selected settings path", err)
-				}
-			} else if data, err := os.ReadFile(selectedPath); err != nil || string(data) != string(selected) {
-				t.Fatal("selected settings were changed", err)
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -453,10 +460,10 @@ func TestCurrentConfigurationPrecedence(t *testing.T) {
 	t.Setenv("AAP_TOKEN", "environment-secret")
 	deps := terminalStartupDependencies()
 	deps.interactive = true
-	deps.choose = func(context.Context, bool, string) (bool, error) { return false, nil }
-	deps.promptNew = func(context.Context) (config.Settings, string, loginCredentials, error) {
+	deps.choose = func(context.Context, []config.Connection, string) (int, error) { return 0, nil }
+	deps.promptNew = func(context.Context) (config.Settings, loginCredentials, error) {
 		t.Fatal("loading current configuration prompted for a new one")
-		return config.Settings{}, "", loginCredentials{}, nil
+		return config.Settings{}, loginCredentials{}, nil
 	}
 	deps.saveCredentials = func(config.Settings, string) error {
 		t.Fatal("current complete configuration was rewritten")
@@ -465,5 +472,58 @@ func TestCurrentConfigurationPrecedence(t *testing.T) {
 	s, token, err := startConnection(context.Background(), selectedPath, deps)
 	if err != nil || s.URL != "https://environment.example" || s.Mode != config.Direct || s.TLSVerify || token != "environment-secret" {
 		t.Fatal("current configuration precedence changed", err)
+	}
+}
+
+func TestStartupSelectsEachSavedURLWithOverrides(t *testing.T) {
+	startupTestHome(t)
+	one := config.Settings{URL: "https://one.example", Mode: config.Direct, TLSVerify: false}
+	two := config.Settings{URL: "https://two.example", Mode: config.Gateway, TLSVerify: true}
+	for _, item := range []struct {
+		settings config.Settings
+		token    string
+	}{{one, "one-token"}, {two, "two-token"}} {
+		if err := config.SaveCredentials(item.settings, item.token); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("AAP_URL", "https://env.example")
+	t.Setenv("AAP_TOKEN", "env-token")
+	t.Setenv("AAP_CONNECTION_MODE", "gateway")
+	t.Setenv("AAP_TLS_VERIFY", "true")
+	for _, item := range []struct {
+		settings config.Settings
+		token    string
+	}{{one, "one-token"}, {two, "two-token"}, {config.Settings{URL: "https://env.example", Mode: config.Gateway, TLSVerify: true}, "env-token"}} {
+		deps := terminalStartupDependencies()
+		deps.interactive = true
+		deps.choose = func(_ context.Context, entries []config.Connection, _ string) (int, error) {
+			if len(entries) != 3 {
+				t.Fatal("saved or environment URL is missing")
+			}
+			for i, c := range entries {
+				if c.Settings.URL == item.settings.URL {
+					return i, nil
+				}
+			}
+			t.Fatal("selected URL is missing")
+			return -1, nil
+		}
+		deps.prompt = func(context.Context, config.Settings, bool) (config.Settings, loginCredentials, error) {
+			t.Fatal("complete saved connection requested authentication")
+			return config.Settings{}, loginCredentials{}, nil
+		}
+		deps.createToken = func(context.Context, config.Settings, string, string) (string, error) {
+			t.Fatal("saved connection created a token")
+			return "", nil
+		}
+		deps.saveCredentials = func(config.Settings, string) error {
+			t.Fatal("selection rewrote credentials")
+			return nil
+		}
+		s, token, err := startConnection(context.Background(), "", deps)
+		if err != nil || s != item.settings || token != item.token {
+			t.Fatal("selected URL used another connection's settings or token", err)
+		}
 	}
 }

@@ -8,21 +8,45 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"aaptui/internal/config"
 )
+
+type configurationOption struct {
+	label     string
+	available bool
+}
 
 type configurationChoice struct {
 	ctx      context.Context
-	canLoad  bool
+	options  []configurationOption
 	status   string
 	selected int
 	width    int
+	height   int
 	done     bool
 }
 
-func newConfigurationChoice(canLoad bool, status string) *configurationChoice {
-	m := &configurationChoice{canLoad: canLoad, status: status, width: 80}
-	if !canLoad {
-		m.selected = 1
+func newConfigurationChoice(connections []config.Connection, status string) *configurationChoice {
+	m := &configurationChoice{status: status, width: 80, height: 24}
+	for _, c := range connections {
+		label := "Invalid saved URL"
+		if config.Validate(config.Settings{URL: c.Settings.URL, Mode: config.Gateway}) == nil {
+			label = c.Settings.URL
+		}
+		for _, other := range connections {
+			if token := other.Secrets.Token(); token != "" {
+				label = strings.ReplaceAll(label, token, "[redacted]")
+			}
+		}
+		if c.Err != nil {
+			label += " (unavailable)"
+		}
+		m.options = append(m.options, configurationOption{label, c.Err == nil})
+	}
+	m.options = append(m.options, configurationOption{"Create new configuration", true})
+	for !m.options[m.selected].available {
+		m.selected++
 	}
 	return m
 }
@@ -41,18 +65,19 @@ func (m *configurationChoice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = max(1, msg.Width)
+		m.height = max(1, msg.Height)
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc", "ctrl+c", "ctrl+d", "q":
 			return m, tea.Quit
 		case "up", "k", "shift+tab":
-			m.selected = 0
+			m.selected = max(0, m.selected-1)
 		case "down", "j":
-			m.selected = 1
+			m.selected = min(len(m.options)-1, m.selected+1)
 		case "tab":
-			m.selected = 1 - m.selected
+			m.selected = (m.selected + 1) % len(m.options)
 		case "enter":
-			if m.selected == 0 && !m.canLoad {
+			if !m.options[m.selected].available {
 				return m, nil
 			}
 			m.done = true
@@ -66,39 +91,42 @@ func (m *configurationChoice) View() tea.View {
 	if m.done {
 		return tea.NewView("")
 	}
-	choices := []string{"Load current configuration", "Create new configuration"}
-	if !m.canLoad {
-		choices[0] += " (unavailable)"
-	}
-	for i := range choices {
+	// Window the list around selection so long configurations fit the terminal.
+	rows := max(1, m.height-5)
+	start := max(0, m.selected-rows+1)
+	end := min(len(m.options), start+rows)
+	lines := []string{"AAP startup configuration", m.status, ""}
+	for i := start; i < end; i++ {
 		prefix := "  "
 		if i == m.selected {
 			prefix = "> "
 		}
-		choices[i] = prefix + choices[i]
+		lines = append(lines, prefix+m.options[i].label)
 	}
-	lines := append([]string{"AAP startup configuration", m.status, ""}, choices...)
 	lines = append(lines, "", "↑/↓ or Tab: select · Enter: continue · Esc/Ctrl-C/Ctrl-D: cancel")
+	if m.height < 6 {
+		lines = lines[3 : len(lines)-2]
+	}
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, m.width, "")
 	}
 	return tea.NewView(strings.Join(lines, "\n"))
 }
 
-func promptConfigurationChoice(ctx context.Context, canLoad bool, status string) (bool, error) {
+func promptConfigurationChoice(ctx context.Context, connections []config.Connection, status string) (int, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	m := newConfigurationChoice(canLoad, status)
+	m := newConfigurationChoice(connections, status)
 	m.ctx = ctx
 	_, err := tea.NewProgram(m, tea.WithContext(context.WithoutCancel(ctx)), tea.WithInput(setupInput{os.Stdin, cancel}), tea.WithOutput(terminalOutput{os.Stdout}), tea.WithoutSignalHandler()).Run()
 	if ctx.Err() != nil {
-		return false, ctx.Err()
+		return -1, ctx.Err()
 	}
 	if err != nil {
-		return false, fmt.Errorf("configuration choice terminal failed")
+		return -1, fmt.Errorf("configuration choice terminal failed")
 	}
 	if !m.done {
-		return false, context.Canceled
+		return -1, context.Canceled
 	}
-	return m.selected == 1, nil
+	return m.selected, nil
 }

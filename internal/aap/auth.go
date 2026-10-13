@@ -13,23 +13,26 @@ import (
 	"aaptui/internal/config"
 )
 
-// CreateToken creates one gateway personal access token. It never retries or
-// follows redirects, including with an injected HTTP client.
+// CreateToken creates one personal access token in the configured mode.
+// It never retries or follows redirects, including with an injected HTTP client.
 func CreateToken(ctx context.Context, s config.Settings, username, password string, injected *http.Client) (token string, resultErr error) {
 	const op = "create API token"
 	if err := config.Validate(s); err != nil {
 		return "", apiError(Malformed, op)
-	}
-	if s.Mode != config.Gateway {
-		return "", fmt.Errorf("%s: direct-controller token creation is unsupported; use gateway mode or supply AAP_TOKEN", op)
 	}
 	if strings.TrimSpace(username) == "" || len(username) > 4096 || strings.Contains(username, ":") || password == "" || len(password) > 4096 || strings.ContainsFunc(username+password, unicode.IsControl) {
 		return "", apiError(Authentication, op)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	endpoint := strings.TrimRight(s.URL, "/") + "/api/gateway/v1/tokens/"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(`{"description":"aaptui","scope":"write"}`))
+	path := "/api/gateway/v1/tokens/"
+	payload := `{"description":"aaptui","scope":"write"}`
+	if s.Mode == config.Direct {
+		path = "/api/v2/tokens/"
+		payload = `{"description":"aaptui","scope":"write","application":null}`
+	}
+	endpoint := strings.TrimRight(s.URL, "/") + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(payload))
 	if err != nil {
 		return "", apiError(Malformed, op)
 	}
@@ -37,7 +40,7 @@ func CreateToken(ctx context.Context, s config.Settings, username, password stri
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 	uncertain := func(kind ErrorKind) error {
-		return fmt.Errorf("%w; result uncertain, check gateway tokens before trying again", apiError(kind, op))
+		return fmt.Errorf("%w; result uncertain, check server tokens before trying again", apiError(kind, op))
 	}
 	resp, err := connectionHTTPClient(s, injected).Do(req)
 	if err != nil {
@@ -55,7 +58,7 @@ func CreateToken(ctx context.Context, s config.Settings, username, password stri
 	case http.StatusForbidden:
 		return "", fmt.Errorf("%w; token creation may be disabled for this account; supply an existing AAP_TOKEN", apiError(Permission, op))
 	case http.StatusNotFound, http.StatusMethodNotAllowed:
-		return "", fmt.Errorf("%w; use an AAP gateway with token creation enabled or supply AAP_TOKEN", apiError(Unsupported, op))
+		return "", fmt.Errorf("%w; token creation is unavailable for this connection; check the connection mode or supply AAP_TOKEN", apiError(Unsupported, op))
 	case http.StatusBadRequest:
 		return "", apiError(Rejected, op)
 	default:

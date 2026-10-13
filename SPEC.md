@@ -31,34 +31,48 @@ Configuration:
 These connection settings may be supplied through environment
 variables or a configuration file.
 
-On every launch, prompt to load the current configuration or create a new one
-before opening the main TUI. Loading the current configuration reuses the
-effective settings and credentials, prompting for a missing host URL or gateway
-username/password when needed. Mark absent or invalid current connections as
-unavailable and keep new setup accessible.
+On every launch, display a selectable list of saved AAP URLs from the user's
+configuration before opening the main TUI, replacing "Load current configuration".
+Selecting a URL reuses that connection's settings and credentials, prompting for
+username/password when needed. Show the list even when only one URL is saved.
+Mark invalid saved connections as unavailable and keep "Create new configuration"
+accessible, including when no URLs are saved. Support multiple saved connections
+and continue reading existing single-connection configuration files.
 
-Creating a new configuration prompts for the host URL, connection mode, TLS
-verification, and authentication details, even when current settings are complete.
+Creating a new configuration prompts for the host URL, connection mode,
+TLS verification, username, and password, even when current settings are complete.
 Start with gateway mode and TLS verification enabled; do not reuse current URLs
-or tokens. Gateway authentication accepts username/password to generate a token
-or an existing API token. Direct mode prompts for an existing token and explains
-that token creation requires gateway mode. Mask password/token entry and keep
-login credentials in memory only. Validate all settings before sending credentials.
+or tokens. Submitting the credentials triggers one token-creation request using
+the selected mode's endpoint, then saves the returned token with the connection
+settings after success. Mask
+password entry and keep login credentials in memory only. Accept gateway or
+direct-controller mode; actual endpoint availability and token-creation permissions
+depend on the deployment. Validate all settings before sending credentials.
 New setup uses the entered values for this launch, ignoring selected-file and
-environment overrides. Those overrides continue applying to the current choice
-on later launches.
+environment overrides. List the effective selected-file/environment URL alongside
+saved URLs and apply its overrides only to its matching origin. Selecting another
+saved URL uses that connection's settings and token.
 
-Save the API URL and authenticated token together as JSON fields `url` and
-`token` in `~/.config/aaptui/config.json`, using the user's home directory
-and private directory/file permissions (`0700`/`0600`). Write atomically
-and preserve unrelated settings. This credential-storage path stays
+Save each API URL and its authenticated token together in
+`~/.config/aaptui/config.json`, using the user's home directory and private
+directory/file permissions (`0700`/`0600`). Store entries in a JSON `connections`
+array with `url`, `token`, `connection_mode`, and `tls_verify`. Read existing
+single-connection files and migrate them only on a successful save. Saving the
+same API origin updates its entry; distinct origins remain separate. Write
+atomically and preserve other saved connections and unrelated settings. This
+credential-storage path stays
 under the user's home directory even when `XDG_CONFIG_HOME` or `--config`
 selects a different settings file. Never persist the login username or
 password or accept tokens as command-line arguments.
 
-Load defaults, then the private home configuration, then a different
-selected settings file, then environment overrides for the current choice.
-Read saved tokens only from the private home configuration, bound to its stored API URL;
+Use the first selected-file URL, or the first saved URL, as the effective URL,
+with `AAP_URL` taking precedence. Start from defaults and that origin's saved
+settings, then apply selected-file and environment overrides to that entry only.
+List other saved and selected-file URLs separately, preserving their settings.
+Reject duplicate origins within a file and mixed legacy URL/token and collection
+formats. Optional top-level mode/TLS settings provide defaults for array entries.
+Read saved tokens only from the private home configuration, each bound to its
+stored API URL;
 do not reuse a saved token for a different API origin. `AAP_TOKEN` remains
 supported and overrides the saved token. Missing values trigger prompts;
 invalid nonempty values and malformed files remain errors. Save new connections
@@ -69,13 +83,15 @@ can correct it. Noninteractive startup must fail clearly without waiting for
 input, including when credentials are complete. Cancellation and failures must
 restore terminal state and must not expose credentials.
 
-Prompted token creation uses the AAP 2.6 gateway personal-access-token
-endpoint with write scope, subject to the user's existing permissions.
-Direct-controller mode requires an existing token. Keep requests cancellable,
+Prompted token creation uses `/api/gateway/v1/tokens/` in gateway mode or
+`/api/v2/tokens/` in direct-controller mode, with write scope, subject to the
+user's existing permissions. Direct mode sends `application: null` to create a
+personal token. Gateway is the preferred AAP 2.6 route; direct-controller OAuth
+is a deployment-dependent compatibility path. Keep requests cancellable,
 reject redirects, and never automatically retry uncertain token creation.
-Verify entered tokens with `me/` before saving, including when only the URL was
-missing from the current configuration. Loading a complete current configuration
-performs no startup authentication request or credential write.
+When using `AAP_TOKEN`, supply a URL so it appears in the selection list.
+Selecting a complete saved connection performs no startup authentication request
+or credential write.
 
 Credentials must never be stored in source code or displayed in
 application output. TLS verification must be enabled by default.

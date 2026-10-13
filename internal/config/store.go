@@ -90,9 +90,22 @@ func saveCredentials(home string, s Settings, token string) (resultErr error) {
 	if err != nil && !os.IsNotExist(err) {
 		return fail("cannot read existing settings; file was not replaced")
 	}
-	values.URL, values.Token = &s.URL, &token
-	// Retain the connection choices used with this URL/token on later launches.
-	values.Mode, values.TLSVerify = &s.Mode, &s.TLSVerify
+	// Migrate legacy credentials only on a successful save. Matching origins
+	// update one entry; other connections keep their settings and credentials.
+	records := fileConnections(values)
+	updated := []connectionSettings{{URL: &s.URL, Token: &token, Mode: &s.Mode, TLSVerify: &s.TLSVerify}}
+	for _, record := range records {
+		if record.URL != nil && SameOrigin(s.URL, *record.URL) {
+			continue
+		}
+		updated = append(updated, record)
+	}
+	if values.URL != nil {
+		values.connectionSettings = connectionSettings{}
+	} else {
+		values.Token = nil
+	}
+	values.Connections = updated
 	data, err := json.MarshalIndent(values, "", "  ")
 	if err != nil || len(data)+1 > 64*1024 {
 		return fail("cannot encode credential file")

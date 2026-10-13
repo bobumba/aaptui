@@ -52,8 +52,8 @@ func TestSavedCredentialsAndOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var fields map[string]any
-	if json.Unmarshal(data, &fields) != nil || len(fields) != 4 || fields["connection_mode"] != "direct" || fields["tls_verify"] != false {
+	var fields fileSettings
+	if json.Unmarshal(data, &fields) != nil || len(fields.Connections) != 1 || *fields.Connections[0].Mode != Direct || *fields.Connections[0].TLSVerify {
 		t.Fatal("saved configuration is incomplete")
 	}
 	files, err := os.ReadDir(filepath.Dir(path))

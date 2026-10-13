@@ -14,65 +14,70 @@ import (
 )
 
 func TestStartupMissingCombinations(t *testing.T) {
-	for _, tc := range []struct {
-		name, url, token                  string
-		prompts, creates, verifies, saves int
-	}{
-		{"complete", "https://example.org", "supplied", 0, 0, 0, 0},
-		{"missing URL", "", "supplied", 1, 0, 1, 1},
-		{"missing token", "https://example.org", "", 1, 1, 0, 1},
-		{"missing both", "", "", 1, 1, 0, 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			prompts, creates, verifies, saves := 0, 0, 0, 0
-			deps := startupDependencies{
-				interactive: true,
-				prompt: func(_ context.Context, s config.Settings, needToken bool) (config.Settings, loginCredentials, error) {
-					prompts++
-					if needToken != (tc.token == "") || s.URL != tc.url {
-						t.Fatal("prompt discarded existing settings")
-					}
-					s.URL = "https://example.org"
-					return s, loginCredentials{"user", "private"}, nil
-				},
-				createToken: func(_ context.Context, _ config.Settings, user, password string) (string, error) {
-					creates++
-					if user != "user" || password != "private" {
-						t.Fatal("missing login credentials")
-					}
-					return "generated", nil
-				},
-				verifyToken: func(_ context.Context, _ config.Settings, token string) error {
-					verifies++
-					if token != "supplied" {
-						t.Fatal("supplied token replaced")
-					}
-					return nil
-				},
-				saveCredentials: func(s config.Settings, token string) error {
-					saves++
-					if s.URL != "https://example.org" || token == "" {
-						t.Fatal("incomplete credentials persisted")
-					}
-					return nil
-				},
-			}
-			s, token, err := setupConnection(context.Background(), config.Settings{URL: tc.url, Mode: config.Gateway, TLSVerify: true}, tc.token, deps)
-			if err != nil || s.URL != "https://example.org" || token == "" || prompts != tc.prompts || creates != tc.creates || verifies != tc.verifies || saves != tc.saves {
-				t.Fatal("unexpected startup result", err, prompts, creates, verifies, saves)
-			}
-		})
+	for _, mode := range []config.ConnectionMode{config.Gateway, config.Direct} {
+		for _, tc := range []struct {
+			name, url, token                  string
+			prompts, creates, verifies, saves int
+		}{
+			{"complete", "https://example.org", "supplied", 0, 0, 0, 0},
+			{"missing URL", "", "supplied", 1, 0, 1, 1},
+			{"missing token", "https://example.org", "", 1, 1, 0, 1},
+			{"missing both", "", "", 1, 1, 0, 1},
+		} {
+			t.Run(string(mode)+"/"+tc.name, func(t *testing.T) {
+				prompts, creates, verifies, saves := 0, 0, 0, 0
+				deps := startupDependencies{
+					interactive: true,
+					prompt: func(_ context.Context, s config.Settings, needToken bool) (config.Settings, loginCredentials, error) {
+						prompts++
+						if needToken != (tc.token == "") || s.URL != tc.url {
+							t.Fatal("prompt discarded existing settings")
+						}
+						if s.Mode != mode {
+							t.Fatal("prompt changed the connection mode")
+						}
+						s.URL = "https://example.org"
+						return s, loginCredentials{"user", "private"}, nil
+					},
+					createToken: func(_ context.Context, got config.Settings, user, password string) (string, error) {
+						creates++
+						if got.Mode != mode || user != "user" || password != "private" {
+							t.Fatal("missing login credentials")
+						}
+						return "generated", nil
+					},
+					verifyToken: func(_ context.Context, _ config.Settings, token string) error {
+						verifies++
+						if token != "supplied" {
+							t.Fatal("supplied token replaced")
+						}
+						return nil
+					},
+					saveCredentials: func(s config.Settings, token string) error {
+						saves++
+						if s.URL != "https://example.org" || token == "" {
+							t.Fatal("incomplete credentials persisted")
+						}
+						return nil
+					},
+				}
+				s, token, err := setupConnection(context.Background(), config.Settings{URL: tc.url, Mode: mode, TLSVerify: true}, tc.token, deps)
+				if err != nil || s.URL != "https://example.org" || token == "" || prompts != tc.prompts || creates != tc.creates || verifies != tc.verifies || saves != tc.saves {
+					t.Fatal("unexpected startup result", err, prompts, creates, verifies, saves)
+				}
+			})
+		}
 	}
 }
 
 func TestStartupCancellationFailuresAndDirectMode(t *testing.T) {
-	for _, scenario := range []string{"noninteractive", "direct", "cancel", "invalid URL", "authentication", "storage", "verification"} {
+	for _, scenario := range []string{"noninteractive", "cancel", "invalid URL", "authentication", "storage", "verification"} {
 		t.Run(scenario, func(t *testing.T) {
 			saves := 0
 			deps := startupDependencies{
 				interactive: scenario != "noninteractive",
 				prompt: func(_ context.Context, s config.Settings, _ bool) (config.Settings, loginCredentials, error) {
-					if scenario == "noninteractive" || scenario == "direct" {
+					if scenario == "noninteractive" {
 						t.Fatal("unexpected prompt")
 					}
 					if scenario == "cancel" {
@@ -100,9 +105,6 @@ func TestStartupCancellationFailuresAndDirectMode(t *testing.T) {
 			}
 			s := config.Settings{URL: "https://example.org", Mode: config.Gateway, TLSVerify: true}
 			token := ""
-			if scenario == "direct" {
-				s.Mode = config.Direct
-			}
 			if scenario == "verification" {
 				s.URL, token = "", "supplied"
 				deps.prompt = func(_ context.Context, s config.Settings, _ bool) (config.Settings, loginCredentials, error) {

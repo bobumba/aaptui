@@ -25,17 +25,17 @@ func (loginCredentials) GoString() string { return "[redacted]" }
 
 type startupDependencies struct {
 	interactive     bool
-	load            func(string) (config.Settings, string, error)
-	choose          func(context.Context, bool, string) (bool, error)
-	promptNew       func(context.Context) (config.Settings, string, loginCredentials, error)
+	load            func(string) ([]config.Connection, error)
+	choose          func(context.Context, []config.Connection, string) (int, error)
+	promptNew       func(context.Context) (config.Settings, loginCredentials, error)
 	prompt          func(context.Context, config.Settings, bool) (config.Settings, loginCredentials, error)
 	createToken     func(context.Context, config.Settings, string, string) (string, error)
 	verifyToken     func(context.Context, config.Settings, string) error
 	saveCredentials func(config.Settings, string) error
 }
 
-// startConnection always asks before connecting. New setup intentionally ignores
-// selected-file and environment values; they apply only to the current choice.
+// startConnection always presents URLs before connecting. New setup uses fresh
+// input, while selecting a saved URL uses only that entry's effective settings.
 func startConnection(ctx context.Context, path string, deps startupDependencies) (config.Settings, string, error) {
 	if err := ctx.Err(); err != nil {
 		return config.Settings{}, "", err
@@ -43,34 +43,36 @@ func startConnection(ctx context.Context, path string, deps startupDependencies)
 	if !deps.interactive {
 		return config.Settings{}, "", fmt.Errorf("startup configuration choice requires an interactive terminal")
 	}
-	s, token, loadErr := deps.load(path)
-	canLoad, status := true, "Current configuration is ready."
-	switch {
-	case loadErr != nil:
-		canLoad, status = false, "Current configuration is invalid or cannot be read. Create a new configuration or correct the settings."
-	case s.URL == "" && token == "":
-		canLoad, status = false, "No current connection is available. Create a new configuration."
-	case s.URL == "" || token == "":
-		status = "Current configuration is incomplete; missing details will be prompted."
+	connections, loadErr := deps.load(path)
+	status := "Select an AAP URL or create a new configuration."
+	if loadErr != nil {
+		connections = nil
+		status = "Configuration is invalid or cannot be read. Create a new configuration or correct the settings."
+	} else if len(connections) == 0 {
+		status = "No saved URLs are available. Create a new configuration."
 	}
-	createNew, err := deps.choose(ctx, canLoad, status)
+	selected, err := deps.choose(ctx, connections, status)
 	if err != nil {
 		return config.Settings{}, "", err
 	}
 	if err := ctx.Err(); err != nil {
 		return config.Settings{}, "", err
 	}
-	if !createNew {
-		if loadErr != nil {
-			return config.Settings{}, "", loadErr
-		}
-		return setupConnection(ctx, s, token, deps)
+	if selected < 0 || selected > len(connections) {
+		return config.Settings{}, "", fmt.Errorf("invalid startup selection")
 	}
-	s, token, login, err := deps.promptNew(ctx)
+	if selected < len(connections) {
+		c := connections[selected]
+		if c.Err != nil {
+			return config.Settings{}, "", c.Err
+		}
+		return setupConnection(ctx, c.Settings, c.Secrets.Token(), deps)
+	}
+	s, login, err := deps.promptNew(ctx)
 	if err != nil {
 		return config.Settings{}, "", err
 	}
-	return authenticateConnection(ctx, s, token, login, deps)
+	return authenticateConnection(ctx, s, "", login, deps)
 }
 
 func setupConnection(ctx context.Context, s config.Settings, token string, deps startupDependencies) (config.Settings, string, error) {
@@ -82,9 +84,6 @@ func setupConnection(ctx context.Context, s config.Settings, token string, deps 
 	}
 	if !deps.interactive {
 		return config.Settings{}, "", fmt.Errorf("connection setup requires an interactive terminal; supply AAP_URL and AAP_TOKEN or saved credentials")
-	}
-	if token == "" && s.Mode == config.Direct {
-		return config.Settings{}, "", fmt.Errorf("direct-controller token creation is unsupported; use gateway mode or supply AAP_TOKEN")
 	}
 	s, login, err := deps.prompt(ctx, s, token == "")
 	if err != nil {
@@ -102,9 +101,6 @@ func authenticateConnection(ctx context.Context, s config.Settings, token string
 	}
 	generated := token == ""
 	if generated {
-		if s.Mode == config.Direct {
-			return config.Settings{}, "", fmt.Errorf("direct-controller token creation is unsupported; use gateway mode or supply an existing token")
-		}
 		var err error
 		token, err = deps.createToken(ctx, s, login.username, login.password)
 		login = loginCredentials{}
@@ -127,7 +123,7 @@ func authenticateConnection(ctx context.Context, s config.Settings, token string
 	}
 	if err := deps.saveCredentials(s, token); err != nil {
 		if generated {
-			return config.Settings{}, "", fmt.Errorf("%w; token may exist on the gateway; check gateway tokens before creating another", err)
+			return config.Settings{}, "", fmt.Errorf("%w; token may exist on the server; check server tokens before creating another", err)
 		}
 		return config.Settings{}, "", err
 	}
@@ -137,13 +133,10 @@ func authenticateConnection(ctx context.Context, s config.Settings, token string
 func terminalStartupDependencies() startupDependencies {
 	return startupDependencies{
 		interactive: term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd()),
-		load: func(path string) (config.Settings, string, error) {
-			s, secrets, err := config.LoadForSetup(path)
-			return s, secrets.Token(), err
-		},
-		choose:    promptConfigurationChoice,
-		promptNew: promptNewConnection,
-		prompt:    promptConnection,
+		load:        config.LoadConnections,
+		choose:      promptConfigurationChoice,
+		promptNew:   promptNewConnection,
+		prompt:      promptConnection,
 		createToken: func(ctx context.Context, s config.Settings, username, password string) (string, error) {
 			return aap.CreateToken(ctx, s, username, password, nil)
 		},
@@ -165,7 +158,6 @@ type connectionPrompt struct {
 	login     loginCredentials
 	needToken bool
 	fullSetup bool
-	token     string
 	field     int
 	input     string
 	message   string
@@ -179,8 +171,6 @@ const (
 	fieldPassword
 	fieldMode
 	fieldTLS
-	fieldAuthentication
-	fieldToken
 )
 
 func newConfigurationPrompt() *connectionPrompt {
@@ -210,12 +200,8 @@ func (m *connectionPrompt) Init() tea.Cmd {
 }
 
 func (m *connectionPrompt) insert(text string) {
-	limit := 4096
-	if m.field == fieldToken {
-		limit = 8192
-	}
-	if len(m.input)+len(text) > limit {
-		m.message = fmt.Sprintf("Input exceeds %d bytes.", limit)
+	if len(m.input)+len(text) > 4096 {
+		m.message = "Input exceeds 4096 bytes."
 		return
 	}
 	if strings.ContainsFunc(text, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) {
@@ -235,7 +221,7 @@ func (m *connectionPrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "ctrl+d", "esc":
-			m.input, m.token, m.login = "", "", loginCredentials{}
+			m.input, m.login = "", loginCredentials{}
 			return m, tea.Quit
 		case "backspace":
 			r := []rune(m.input)
@@ -301,27 +287,7 @@ func (m *connectionPrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 				}
-				m.settings.TLSVerify, m.field = verify, fieldAuthentication
-				if m.settings.Mode == config.Direct {
-					m.field = fieldToken
-				}
-			case fieldAuthentication:
-				switch strings.ToLower(strings.TrimSpace(m.input)) {
-				case "", "login":
-					m.field = fieldUsername
-				case "token":
-					m.field = fieldToken
-				default:
-					m.message = "Authentication must be login or token."
-					return m, nil
-				}
-			case fieldToken:
-				if err := config.ValidateToken(m.input); err != nil {
-					m.message = err.Error()
-					return m, nil
-				}
-				m.token, m.input, m.done = m.input, "", true
-				return m, tea.Quit
+				m.settings.TLSVerify, m.field = verify, fieldUsername
 			}
 			m.input, m.message = "", ""
 		default:
@@ -337,9 +303,9 @@ func (m *connectionPrompt) View() tea.View {
 	if m.done {
 		return tea.NewView("")
 	}
-	label := []string{"Host URL", "Username", "Password", "Connection mode (gateway/direct) [gateway]", "TLS verification (true/false) [true]", "Authentication (login/token) [login]", "API token"}[m.field]
+	label := []string{"Host URL", "Username", "Password", "Connection mode (gateway/direct) [gateway]", "TLS verification (true/false) [true]"}[m.field]
 	value := m.input
-	if m.field == fieldPassword || m.field == fieldToken {
+	if m.field == fieldPassword {
 		value = strings.Repeat("*", len([]rune(value)))
 	}
 	connection := fmt.Sprintf("Mode: %s · TLS verification: %t", m.settings.Mode, m.settings.TLSVerify)
@@ -351,9 +317,6 @@ func (m *connectionPrompt) View() tea.View {
 		title = "New AAP connection · saved after successful authentication"
 	}
 	lines := []string{title, connection}
-	if m.field == fieldToken && m.settings.Mode == config.Direct {
-		lines = append(lines, "Direct mode requires an existing token; token creation requires gateway mode.")
-	}
 	lines = append(lines, label+": "+value, m.message, "Enter: continue · Backspace: erase · Ctrl-U: clear · Esc/Ctrl-C/Ctrl-D: cancel")
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, m.width, "")
@@ -362,31 +325,30 @@ func (m *connectionPrompt) View() tea.View {
 }
 
 func promptConnection(ctx context.Context, s config.Settings, needToken bool) (config.Settings, loginCredentials, error) {
-	s, _, login, err := runConnectionPrompt(ctx, newConnectionPrompt(s, needToken))
-	return s, login, err
+	return runConnectionPrompt(ctx, newConnectionPrompt(s, needToken))
 }
 
-func promptNewConnection(ctx context.Context) (config.Settings, string, loginCredentials, error) {
+func promptNewConnection(ctx context.Context) (config.Settings, loginCredentials, error) {
 	return runConnectionPrompt(ctx, newConfigurationPrompt())
 }
 
-func runConnectionPrompt(ctx context.Context, m *connectionPrompt) (config.Settings, string, loginCredentials, error) {
+func runConnectionPrompt(ctx context.Context, m *connectionPrompt) (config.Settings, loginCredentials, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	m.ctx = ctx
-	defer func() { m.input, m.token, m.login = "", "", loginCredentials{} }()
+	defer func() { m.input, m.login = "", loginCredentials{} }()
 	input := setupInput{File: os.Stdin, eof: cancel}
 	_, err := tea.NewProgram(m, tea.WithContext(context.WithoutCancel(ctx)), tea.WithInput(input), tea.WithOutput(terminalOutput{os.Stdout}), tea.WithoutSignalHandler()).Run()
 	if ctx.Err() != nil {
-		return config.Settings{}, "", loginCredentials{}, ctx.Err()
+		return config.Settings{}, loginCredentials{}, ctx.Err()
 	}
 	if err != nil {
-		return config.Settings{}, "", loginCredentials{}, fmt.Errorf("connection setup terminal failed")
+		return config.Settings{}, loginCredentials{}, fmt.Errorf("connection setup terminal failed")
 	}
 	if !m.done {
-		return config.Settings{}, "", loginCredentials{}, context.Canceled
+		return config.Settings{}, loginCredentials{}, context.Canceled
 	}
-	return m.settings, m.token, m.login, nil
+	return m.settings, m.login, nil
 }
 
 // Bubble Tea treats EOF as the end of input scanning without quitting the

@@ -21,7 +21,7 @@ Upstream behavior below is an assumption for AAP 2.6, not product evidence.
 
 ### Startup token creation
 
-Reviewed 2026-10-12 against Red Hat's AAP 2.6
+Reviewed 2026-10-13 against Red Hat's AAP 2.6
 [OAuth 2 token authentication](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/secure-con_controller_api_oauth2_token)
 and [API changes](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/upgrade-assembly_upgrade_api_changes).
 The documented personal-access-token flow sends one Basic-authenticated POST to
@@ -30,10 +30,25 @@ property from the JSON response. Authentication may be disabled for a deployment
 and external/SSO users may require administrator configuration or an existing
 token. No browser/SSO authentication flow is modeled here.
 
-Token creation is separate from controller resource routes. Direct-controller
-mode continues accepting existing tokens; prompted token creation is unsupported
-there because the reviewed AAP 2.6 flow belongs to the gateway. Never send login
-credentials to a guessed controller endpoint or follow a redirect. Requests use
+Direct-controller token creation is also supported at `/api/v2/tokens/`, using
+Basic authentication and JSON `description: "aaptui"`, `scope: "write"`, and
+`application: null` for a personal token. Read `token` from the successful response.
+Evidence: [AWX 24.6.1 API authentication](https://docs.ansible.com/projects/awx/en/24.6.1/rest_api/authentication.html),
+[token model and scopes](https://docs.ansible.com/projects/awx/en/24.6.1/administration/oauth2_token_auth.html),
+and the already pinned AWX commit `94e5795dfc37b95c576d61f3e3b4e936c021548c`:
+`awx/api/views/__init__.py` (`OAuth2TokenList`) and `awx/api/serializers.py`
+(`OAuth2TokenSerializer`, `BaseOAuth2TokenSerializer`). The collection supports
+creation, ties personal tokens to the authenticated user, and returns the token
+on POST. Fixtures remain synthetic models of those sources.
+
+AAP 2.6's API migration guide says direct service APIs and deprecated controller
+token authentication remain available for backward compatibility. Gateway is the
+preferred platform route; the exact direct-controller PAT behavior still depends
+on deployment and is not verified against an AAP instance. Do not interpret the
+gateway migration as a universal prohibition on controller token creation.
+
+Select exactly one endpoint from the configured mode; do not probe alternate
+routes, switch modes automatically, or follow a redirect. Requests use
 the existing TLS verification setting, a deadline, a bounded response, and no
 automatic retries. A transport error or malformed successful response may leave
 a token on the server; report that uncertainty without showing a response body.
@@ -45,14 +60,23 @@ the existing launch/cancel/relaunch operations. Red Hat's
 documents write scope, including read access, and a blank application for PATs.
 The JSON payload/response fixtures remain synthetic models of that flow. When
 setup only prompts for a URL and a token was supplied, use the existing `me/`
-reader to verify authentication before saving. New-configuration setup also
-accepts entered tokens in either mode and verifies them with that mode's `me/`
-route before replacing credentials. The startup menu itself performs no requests.
-Loading a complete current configuration retains the existing asynchronous header
-lookup and performs no startup mutation. New setup ignores current file/environment
-overrides for its active connection and saves only after successful authentication;
-current configuration loading keeps its existing precedence and origin scoping.
-This startup choice adds no API endpoints or changes to token creation.
+reader to verify authentication before saving. New-configuration setup always
+prompts for username/password, sends one token-creation request to the selected
+mode's endpoint, and stores the returned token only after success. It does not
+collect an API token.
+New setup accepts gateway or direct mode. Both modes also retain supplied-token
+support through URL selection. The startup menu itself performs no requests.
+Selecting a complete saved connection retains the existing asynchronous header
+lookup and performs no startup authentication request or credential write.
+The private home file holds a `connections` array with per-origin settings and
+tokens. Legacy single-connection files migrate only on a successful save; adding
+an origin preserves other connections, and saving the same origin updates it.
+Selected-file/environment overrides affect only their effective URL entry;
+selecting another saved origin uses that origin's settings and token. Tokens in
+non-home settings files remain prohibited. New setup ignores file/environment
+overrides for its active connection and saves only after successful authentication.
+An unavailable token endpoint or disabled authentication yields a safe error;
+neither mode automatically retries the POST or forwards credentials elsewhere.
 
 ### Recorded job variables
 

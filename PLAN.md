@@ -1,8 +1,8 @@
 # AAP TUI Implementation Plan
 
-Status: previous milestones were removed. The startup configuration-choice
-milestone below is complete and verified offline. Deployed AAP 2.6 and manual
-interactive-terminal validation remain unavailable.
+Status: completed milestones have been removed. The saved-URL selection
+milestone below is complete and verified offline. Deployed AAP 2.6 and
+manual interactive-terminal validation remain unavailable.
 
 This plan refines `SPEC.md` and follows `AGENTS.md`. No application code is
 authorized by the design discussion alone. Implement one milestone at a time
@@ -97,13 +97,23 @@ loop mutates TUI state. Consumer-defined interfaces allow tests with fakes.
 
 ## Configuration
 
-Every launch asks whether to load the current configuration or create a new one.
-Current configuration loading follows the precedence below. New setup prompts for
-the URL, mode, TLS verification, and gateway login or an existing token, starting
-with gateway mode and TLS verification enabled. It ignores current file/environment
-values for the active connection and saves the new settings only after successful
-authentication. Future current-configuration loads still apply those overrides.
-An interactive terminal is required for either choice.
+Every launch lists saved AAP URLs alongside "Create new configuration".
+Selecting a URL uses its own mode, TLS setting, and origin-bound token, prompting
+for credentials when needed. Store connections in a JSON `connections` array.
+Read legacy single-connection files and migrate them on the next successful
+save. Add distinct origins; update matching origins without losing other entries.
+
+List the effective selected-file/environment URL first and apply its overrides
+only to that entry. Other saved URLs retain their own settings and credentials.
+Use the first selected-file URL, or first home URL, unless `AAP_URL` overrides it.
+Default mode/TLS settings may remain at the top level; reject mixed legacy
+URL/token plus array formats and duplicate origins within one file.
+
+New setup prompts for URL, connection mode, TLS verification, username, and masked
+password, starting with gateway mode and TLS verification enabled. It requests
+one token at the selected mode's endpoint and saves only after authentication.
+New setup uses entered values for this launch, ignoring selected-file/environment
+settings. An interactive terminal is required.
 
 Use JSON and the standard library. The default file is
 `$XDG_CONFIG_HOME/aaptui/config.json`, falling back to
@@ -114,14 +124,14 @@ Startup setup saves the API URL and token together in
 
 | Setting | JSON field | Environment variable | Default |
 | --- | --- | --- | --- |
-| Server URL | `url` | `AAP_URL` | Prompt if missing |
+| Server URL | `url` per connection | `AAP_URL` | No entry if missing |
 | Connection mode | `connection_mode` | `AAP_CONNECTION_MODE` | `gateway` |
 | TLS verification | `tls_verify` | `AAP_TLS_VERIFY` | `true` |
 | Authentication token | `token` in the private home file | `AAP_TOKEN` | Generate if missing |
 
-Apply defaults, then the private home file, then the selected settings file when
-it differs from the home file, then environment values. Read a stored token only
-from the private home file, and use it only when its stored URL matches the
+For the effective entry, apply defaults, its saved settings, selected-file
+settings, then environment values. Other entries use their own settings. Read a
+stored token only from the private home file, and use it only when its stored URL matches the
 effective API origin; `AAP_TOKEN` overrides it. Track presence so explicit `false`
 is not treated as missing. An absent default file is acceptable; a missing
 explicitly selected file or malformed file is an error. Reject unknown fields
@@ -131,8 +141,8 @@ query strings, fragments, unsupported schemes (anything other than HTTP or HTTPS
 and non-root URL paths.
 
 Keep the token separate from printable settings and never accept it as an
-argument. Persist only the API URL and token as credentials; do not save login
-usernames or passwords. Use directory permissions `0700`, file permissions
+argument. Persist the API URL, token, mode, and TLS setting per connection; do not
+save login usernames or passwords. Use directory permissions `0700`, file permissions
 `0600`, and atomic writes that preserve unrelated settings. Redact credentials
 from errors and output. Display the connection mode and whether TLS verification
 is disabled without displaying credentials. Identify HTTP connections and show
@@ -246,60 +256,51 @@ explicit Launch/Cancel buttons; ordinary typing stays within the focused input.
 
 ## Milestones and acceptance tests
 
-### 1. Choose the current configuration or create a new connection at startup
+### 1. Select a saved AAP URL at startup
 
 Status: complete (offline verification).
 
-When launching the program, prompt the user to load the current configuration or
-create a new one. Selecting the current configuration reuses the existing
-settings and credentials. Selecting a new configuration prompts for connection
-details before opening the main TUI, even when a complete current configuration
-is available.
+When launching the program, display a selectable list of URLs from the user's
+configuration instead of "Load current configuration". Selecting a URL opens
+that connection using its saved settings and credentials. Keep "Create new
+configuration" available.
 
 Acceptance criteria:
 
-- Show explicit "Load current configuration" and "Create new configuration"
-  choices before opening the main TUI, including when existing settings are
-  complete. Indicate when no current configuration is available, without
-  displaying credentials, and allow the user to create one.
-- Loading the current configuration retains existing file/environment precedence,
-  validation, origin-bound token reuse, and prompts for missing required values.
-  Explain invalid current settings safely while keeping new setup accessible.
-- Creating a new configuration prompts for the server URL, connection mode,
-  TLS verification, and authentication details. Retain gateway mode and enabled
-  TLS verification as defaults. Do not silently reuse the current URL or token.
-  Reuse the existing gateway username/password token-generation flow and retain
-  direct-mode supplied-token support and its documented token-creation limit.
-- Validate prompted settings before sending credentials. Mask secret entry,
-  never save usernames or passwords, and retain origin/redirect protections and
-  the existing rule against automatically retrying uncertain token creation.
-- Persist the new connection only after successful authentication, using the
-  existing private home credential store and atomic writes. Preserve unrelated
-  settings and leave saved credentials intact on cancellation, authentication
-  failure, or storage failure. Document how the new selection interacts with
-  `--config` and environment overrides so the selected connection is explicit.
-- Support Escape, Ctrl-C, Ctrl-D, EOF, and signal cancellation from the choice
-  and connection prompts; restore terminal state on every exit path. Without an
-  interactive terminal, return a clear error rather than waiting for input.
-- Keep startup orchestration and terminal handling in `cmd/aaptui`, configuration
-  loading/persistence in `internal/config`, and authentication in `internal/aap`.
-  Update `SPEC.md`, `README.md`, and relevant API-contract notes during
-  implementation to describe the new startup behavior.
-- Add regression tests for both choices with complete, missing, and invalid
-  current settings; new setup despite existing credentials; both connection
-  modes; file/environment precedence; successful replacement and failure
-  preservation; secret masking/redaction; cancellation; noninteractive startup;
-  and terminal restoration. Use fake servers and temporary homes.
+- List saved AAP URLs before opening the main TUI, including when only one URL
+  is saved. Support keyboard selection and show no tokens or login credentials.
+- Load the selected URL's connection mode, TLS setting, and associated token.
+  Keep tokens bound to their API origins and prompt for missing credentials
+  through the existing authentication flow.
+- Retain multiple connections in the user's configuration. Creating a connection
+  must preserve other saved connections and unrelated settings. Continue reading
+  existing single-connection configuration files without losing credentials.
+- Keep new setup available when no saved URLs exist. Explain unavailable or
+  invalid configurations safely; do not silently overwrite malformed storage.
+- Preserve private home credential storage, private permissions, atomic writes,
+  and existing authentication safeguards. Cancellation, authentication failures,
+  and failed writes leave saved connections intact.
+- Use the agreed `connections` array, migrate legacy files only after successful
+  authentication, and update matching API origins. Apply selected-file/environment
+  overrides only to their effective URL entry; preserve other saved entries.
+- Preserve cancellation, noninteractive startup errors, and terminal restoration.
+  Keep startup orchestration in `cmd/aaptui`, loading/persistence in
+  `internal/config`, and authentication in `internal/aap`.
+- Add regression tests for zero, one, and multiple saved URLs; selecting different
+  connections with distinct settings and tokens; legacy configuration;
+  creating a connection without losing others; invalid configurations;
+  override behavior; secret redaction; cancellation; and terminal restoration.
+  Use fake servers and temporary homes.
+- Update `README.md` and relevant API-contract notes during implementation to
+  describe URL selection, the configuration format, and override behavior.
 
-Implemented: startup always presents the configuration choice. Current settings
-retain their existing precedence and missing-value setup. New connections collect
-fresh settings, support gateway login or entered tokens in either mode, verify
-entered tokens, and atomically replace private home credentials after successful
-authentication. Invalid current settings do not block new setup; malformed or
-symlinked home credential storage still requires correction before it can be saved.
-Regression tests use synthetic servers and temporary homes; Linux pseudo-terminal
-tests cover both prompts, secret masking, cancellation, EOF, and restoration.
-`go test ./...`, `go vet ./...`, and `go test -race ./...` pass.
+Implemented: startup lists saved and effective override URLs with keyboard
+selection and scrolling. Connections retain per-origin settings and tokens;
+successful saves migrate legacy files and preserve other origins. Regression
+tests cover selection, overrides, migration, storage failures, unavailable entries,
+secret redaction, cancellation, EOF, and Linux terminal restoration.
+Changed Go files were formatted; `go test ./...`, `go vet ./...`, and
+`git diff --check` pass. Deployed AAP 2.6 validation remains unavailable.
 
 For each implementation milestone: format changed Go files with `gofmt -w`, run
 `go test ./...` and `go vet ./...`, review changes for unintended scope, and update

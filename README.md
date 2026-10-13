@@ -155,21 +155,22 @@ go build -o aaptui ./cmd/aaptui
 ./aaptui
 ```
 
-Every launch offers **Load current configuration** and **Create new
-configuration**. Use arrows or Tab to select and Enter to continue. The current
-choice reuses your effective saved/file/environment settings and prompts for
-missing details. When no current connection is available or its settings cannot
-be loaded, the menu marks it unavailable and selects new setup by default.
+Every launch lists the saved AAP URLs and offers **Create new configuration**.
+Use arrows or Tab to select and Enter to continue. Selecting a URL uses that
+connection's mode, TLS setting, and token, prompting for credentials if needed.
+The list appears even with one saved URL. Invalid connections are unavailable;
+new setup remains accessible when the list is empty or a file cannot be read.
+Long lists scroll to keep the selected URL visible.
 
-For a new connection, enter the host URL, connection mode (`gateway` by default),
-and TLS verification (`true` by default). In gateway mode, choose `login` to enter
-a username/password or `token` to enter an existing API token. Direct mode requires
-an existing token. Password and token entry are masked. Gateway login creates a
-personal access token with write scope, subject to your existing permissions.
-After successful authentication, the app saves the URL, token, mode, and TLS
-setting in `~/.config/aaptui/config.json`. It never saves the login username or
-password. Esc, Ctrl-C, and Ctrl-D cancel either prompt; losing terminal input
-also cancels it.
+For a new connection, enter the host URL, connection mode (`gateway` or `direct`),
+TLS verification (`true` by default), username, and password. Password entry is masked. Submitting
+your credentials requests a personal access token with write scope, subject to
+your existing permissions. After successful authentication, the app saves the
+returned token, URL, mode, and TLS setting in `~/.config/aaptui/config.json`.
+It never saves the login username or password. Gateway mode requests a token at
+`/api/gateway/v1/tokens/`; direct mode uses `/api/v2/tokens/`. Endpoint availability
+and permission to create tokens depend on the deployment. Esc, Ctrl-C,
+and Ctrl-D cancel either prompt; losing terminal input also cancels it.
 
 You can still use an existing token:
 
@@ -181,62 +182,90 @@ printf '\n'
 ./aaptui
 ```
 
-Select **Load current configuration** to use environment overrides. Complete
-supplied URL/token pairs connect without further setup or writing a credential
-file. If only the URL is missing, setup prompts for it, verifies the supplied
-token using `me/`, then saves the connection. New setup verifies entered tokens
-before saving, and uses your entered settings for this launch even when file or
-environment overrides are present. Startup requires an interactive terminal;
-redirected input/output fails immediately rather than waiting for the choice.
-Tokens are never accepted as arguments or written to job-output cache metadata.
+Select the URL supplied by `AAP_URL` to use its effective file/environment
+settings. This entry appears alongside saved URLs; overrides apply only to that
+origin. Complete supplied URL/token pairs connect without further setup or
+writing a credential file. Supply `AAP_URL` with `AAP_TOKEN`; without a URL,
+select **Create new configuration**. New setup always requests a token using
+your entered username/password and uses your entered settings for this launch.
+Startup requires an interactive terminal; redirected input/output fails
+immediately rather than waiting for selection. Tokens are never accepted as
+arguments or written to job-output cache metadata.
 
 ## Configuration
 
 Copy [config.example.json](config.example.json) to
 `$XDG_CONFIG_HOME/aaptui/config.json`, or `~/.config/aaptui/config.json` when XDG
 configuration home is unset. Choose another file with `--config PATH`.
-An absent default file is fine; an absent explicit file makes the current choice
-unavailable. For the current choice, startup loads `~/.config/aaptui/config.json`
-first. A different default or explicit settings file overrides its non-secret
-settings, then environment values override both files. Saved credentials always stay in the home configuration,
-even when XDG or `--config` selects another file; other files cannot contain tokens.
+An absent default file is fine; an absent explicit file or a malformed file
+makes saved-URL selection unavailable while new setup remains accessible.
+Saved credentials always stay in `~/.config/aaptui/config.json`, even when XDG
+or `--config` selects another file. Other files cannot contain tokens.
+
+The home file stores a `connections` array. Each entry contains `url`,
+`connection_mode`, `tls_verify`, and an optional `token` saved after authentication.
+For example, a settings file without credentials can contain:
+
+```json
+{
+  "connections": [
+    {"url": "https://aap.example.com", "connection_mode": "gateway", "tls_verify": true},
+    {"url": "https://controller.example.com", "connection_mode": "direct", "tls_verify": true}
+  ]
+}
+```
+
+Existing single-connection files with top-level `url`/`token` remain readable.
+They migrate into the array on the next successful credential save. Saving a
+new origin preserves the existing connections. Saving the same origin updates
+that entry, treating host case, default ports, and trailing slashes as equivalent.
+The most recently saved connection appears first by default. Duplicate origins
+within one file and mixing top-level URL/token fields with an array are rejected.
+Optional top-level `connection_mode` and `tls_verify` act as defaults for entries
+that omit those fields and are preserved when saving.
 
 | Setting | Environment override | Default |
 | --- | --- | --- |
-| `url` | `AAP_URL` | prompt if missing |
+| `url` | `AAP_URL` | no URL entry if missing |
 | `token` (private home file only) | `AAP_TOKEN` | generate if missing |
 | `connection_mode` | `AAP_CONNECTION_MODE` | `gateway` |
 | `tls_verify` | `AAP_TLS_VERIFY` | `true` |
 
-For the current choice, precedence is defaults, home file, selected file, then
-environment (including explicit false and empty values). Missing/blank URLs or tokens trigger setup;
-invalid nonempty settings, invalid tokens, unknown JSON fields, token fields
-outside the private home file, null values, and files larger than 64 KiB are rejected.
-Saved tokens are bound to their stored API origin; changing `AAP_URL` to another
-origin prompts for new credentials unless `AAP_TOKEN` is supplied.
+The first connection in a selected settings file supplies the effective URL;
+otherwise the first home connection does. `AAP_URL` overrides that effective URL.
+For that origin, use its saved settings, then selected-file settings, then
+environment overrides (including explicit false and empty values). Only its
+entry receives these overrides, and it appears first. Other saved URLs keep their
+own settings and tokens. Additional URLs in a selected file are also selectable;
+their explicit settings override matching saved settings. Saved tokens are reused
+only for the same API origin, and `AAP_TOKEN` applies only to the effective entry.
+If its origin is not saved, it starts from defaults plus selected-file/environment
+settings and prompts for credentials unless `AAP_TOKEN` is supplied.
+
+Invalid nonempty settings/tokens make their connection unavailable. Unknown JSON
+fields, token fields outside the private home file, null values, blank URLs in
+array entries, and files larger than 64 KiB are rejected. Fix unreadable or
+malformed files before selecting saved connections.
 
 The home credential directory must have permissions `0700` and its regular
 configuration file `0600`; symlinked credential paths are rejected. Startup saves
 atomically and preserves other settings files. New setup ignores `--config`, XDG
-settings, and `AAP_*` values for the active connection, and replaces the home
-credentials only after successful authentication. Those overrides still apply
-when loading the current configuration on a subsequent launch. Cancellation and
-authentication or replacement-write failures preserve saved credentials. A
-malformed or symlinked home file is not overwritten; correct it before saving a
-new connection. If an existing credential file has insecure permissions, correct
-them before loading the current configuration:
+settings, and `AAP_*` values for the active connection. Cancellation,
+authentication failures, and replacement-write failures preserve saved
+connections. A malformed or symlinked home file is not overwritten; correct it
+before saving a new connection. If storage has insecure permissions, correct them:
 
 ```bash
 chmod 700 ~/.config/aaptui
 chmod 600 ~/.config/aaptui/config.json
 ```
 
-To replace an expired/revoked saved token or change servers, select **Create new
-configuration** and enter the connection details. You can also remove the `token`
-field from the home configuration and unset `AAP_TOKEN`, then load the current
-configuration to sign in again. Removing the file forgets both the connection
-and preferences. Local removal does not revoke
-the server token; revoke unwanted tokens in the gateway's token management UI.
+To replace an expired/revoked saved token, select **Create new configuration**
+and enter the same server URL and fresh credentials. To sign in again using a
+saved entry, remove its `token` field, unset `AAP_TOKEN`, and select that URL.
+Removing an array entry forgets that connection; removing the file forgets all
+connections and preferences. Local removal does not revoke server tokens;
+revoke unwanted tokens in the server's token management UI.
 
 `gateway` uses `/api/controller/v2/`; `direct` uses `/api/v2/`. Direct token
 acceptance depends on the deployment. URLs must be HTTP or HTTPS origins without
@@ -258,12 +287,17 @@ For AAP 2.6, use a platform gateway OAuth 2 token with the gateway origin in
 `AAP_URL` and `AAP_CONNECTION_MODE=gateway`. Red Hat documents
 [gateway token authentication](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/secure-con_controller_api_oauth2_token)
 and the [move of token authentication to gateway](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/upgrade-assembly_upgrade_api_changes).
-Use `direct` only with a controller origin and a token that deployment accepts.
-Prompted token creation requires gateway mode; direct-controller mode requires
-an existing token. If gateway login fails, Basic authentication or external-user
-token creation may be disabled; use an existing token or contact the administrator.
+Use `direct` with a controller origin exposing the controller API. It supports
+username/password token creation at `/api/v2/tokens/` as documented by
+[AWX API authentication](https://docs.ansible.com/projects/awx/en/24.6.1/rest_api/authentication.html).
+Gateway is preferred for AAP 2.6; the migration guide marks legacy controller
+token authentication deprecated and retains it for backward compatibility.
+Direct endpoint availability remains deployment-dependent. If login fails,
+Basic authentication or external-user token creation may be disabled; supply an
+existing token through `AAP_TOKEN` and
+select the matching URL, or contact the administrator.
 Token creation is attempted once. After an uncertain response or a storage failure,
-check gateway tokens before trying again, as a token may already have been created.
+check server tokens before trying again, as a token may already have been created.
 Restart aaptui after changing environment settings; they are loaded at startup.
 HTTP 403 is a separate permission failure: check the token owner's access to the
 requested resources. Do not share token values when reporting errors.
@@ -383,12 +417,12 @@ Tests exercise configuration, both API prefixes, TLS defaults, authentication,
 unsafe links/redirects, every required resource type, workflow nodes, bounded
 storage, older-history reload, retries, delayed final output, cleanup, and
 confirmation/status reconciliation. Startup regressions cover missing settings,
-gateway token creation, safe failures without retries, credential permissions,
+token creation in both connection modes, safe failures without retries, credential permissions,
 atomic replacement, environment overrides, and server scoping. Startup-choice
 tests cover complete/incomplete/invalid current settings, fresh setup despite
-file/environment overrides, token verification in both modes, successful
+file/environment overrides, credential-driven token creation and storage, successful
 replacement, and preservation after failures. Linux terminal tests check both
-startup choices, password/token masking, graceful cancellation, and terminal
+startup choices, password masking, graceful cancellation, and terminal
 restoration; input EOF is covered for each prompt. Integration tests drive the
 TUI against synthetic HTTPS APIs for both modes, including inventory/group traversal, host
 pagination, identity/count header initialization, template-job paging, and

@@ -20,7 +20,7 @@ import (
 )
 
 func TestSetupPromptRestoresTerminal(t *testing.T) {
-	for _, prompt := range []string{"missing settings", "new login", "new token", "configuration choice"} {
+	for _, prompt := range []string{"missing settings", "new login", "new direct login", "configuration choice", "saved URL selection"} {
 		for _, exit := range []string{"complete", "escape", "ctrl-c", "ctrl-d", "signal"} {
 			t.Run(prompt+"/"+exit, func(t *testing.T) {
 				input := terminalInput(t)
@@ -52,14 +52,14 @@ func TestSetupPromptRestoresTerminal(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				connection := newConnectionPrompt(config.Settings{URL: "https://example.org", Mode: config.Gateway, TLSVerify: true}, true)
-				if prompt == "new login" || prompt == "new token" {
+				if prompt == "new login" || prompt == "new direct login" {
 					connection = newConfigurationPrompt()
 				}
 				connection.ctx = ctx
-				choice := newConfigurationChoice(true, "Current configuration is ready.")
+				choice := newConfigurationChoice([]config.Connection{{Settings: config.Settings{URL: "https://example.org"}}}, "Select URL.")
 				choice.ctx = ctx
 				var m tea.Model = connection
-				if prompt == "configuration choice" {
+				if prompt == "configuration choice" || prompt == "saved URL selection" {
 					m = choice
 				}
 				p := tea.NewProgram(m, tea.WithContext(context.WithoutCancel(ctx)), tea.WithInput(input), tea.WithOutput(output), tea.WithWindowSize(80, 24), tea.WithoutSignalHandler())
@@ -91,33 +91,29 @@ func TestSetupPromptRestoresTerminal(t *testing.T) {
 						}
 					}
 				}
-				if prompt == "configuration choice" {
-					waitFrame("Load current configuration")
-					p.Send(tea.KeyPressMsg{Code: tea.KeyDown})
-					waitFrame("> Create new configuration")
+				if prompt == "configuration choice" || prompt == "saved URL selection" {
+					waitFrame("https://example.org")
+					if prompt == "configuration choice" {
+						p.Send(tea.KeyPressMsg{Code: tea.KeyDown})
+						waitFrame("> Create new configuration")
+					}
 				} else {
-					if prompt == "new login" || prompt == "new token" {
+					if prompt == "new login" || prompt == "new direct login" {
 						waitFrame("Host URL")
 						p.Send(tea.PasteMsg{Content: "https://new.example"})
 						p.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 						waitFrame("Connection mode")
+						if prompt == "new direct login" {
+							p.Send(tea.PasteMsg{Content: "direct"})
+						}
 						p.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 						waitFrame("TLS verification (true/false)")
 						p.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
-						waitFrame("Authentication (login/token)")
-						if prompt == "new token" {
-							p.Send(tea.PasteMsg{Content: "token"})
-						}
-						p.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 					}
-					if prompt == "new token" {
-						waitFrame("API token")
-					} else {
-						waitFrame("Username")
-						p.Send(tea.PasteMsg{Content: "alice"})
-						p.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
-						waitFrame("Password")
-					}
+					waitFrame("Username")
+					p.Send(tea.PasteMsg{Content: "alice"})
+					p.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+					waitFrame("Password")
 					p.Send(tea.PasteMsg{Content: "private-secret"})
 					waitFrame("***")
 				}
@@ -151,7 +147,7 @@ func TestSetupPromptRestoresTerminal(t *testing.T) {
 					t.Fatal("secret written to terminal", err)
 				}
 				completed := connection.done
-				if prompt == "configuration choice" {
+				if prompt == "configuration choice" || prompt == "saved URL selection" {
 					completed = choice.done
 				}
 				if completed != (exit == "complete") {
@@ -184,10 +180,10 @@ func TestSetupInputEOFQuitsPrompt(t *testing.T) {
 				connection = newConfigurationPrompt()
 			}
 			connection.ctx = ctx
-			choice := newConfigurationChoice(true, "Current configuration is ready.")
+			choice := newConfigurationChoice([]config.Connection{{Settings: config.Settings{URL: "https://example.org"}}}, "Select URL.")
 			choice.ctx = ctx
 			var m tea.Model = connection
-			if prompt == "configuration choice" {
+			if prompt == "configuration choice" || prompt == "saved URL selection" {
 				m = choice
 			}
 			p := tea.NewProgram(m, tea.WithContext(context.WithoutCancel(ctx)), tea.WithInput(setupInput{reader, cancel}), tea.WithOutput(io.Discard), tea.WithWindowSize(80, 24), tea.WithoutSignalHandler())
