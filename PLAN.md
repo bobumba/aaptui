@@ -1,7 +1,7 @@
 # AAP TUI Implementation Plan
 
-Status: job-template launch milestone implemented and verified offline.
-Deployed AAP 2.6 validation remains unavailable.
+Status: all milestones, including launch prompt presentation, are implemented
+and verified offline. Deployed AAP 2.6 validation remains unavailable.
 
 This plan refines `SPEC.md` and follows `AGENTS.md`. No application code is
 authorized by the design discussion alone. Implement one milestone at a time
@@ -226,85 +226,53 @@ explicit Launch/Cancel buttons; ordinary typing stays within the focused input.
 
 ## Milestones and acceptance tests
 
-### 1. Launch a job from a job template
+### 1. Improve job launch prompts
 
-Add a launch action to job-template details. Open a focused launch form that
-accounts for the template's survey and always offers an `extra_vars` editor for
-manual variable definition. Use Tab to move between survey fields and the
-`extra_vars` editor before submitting the launch.
+Replace the rudimentary job launch form presentation with a focused, bordered
+prompt styled consistently with the existing job cancel/relaunch confirmation
+prompts. Give each survey field and the manual `extra_vars` editor its own
+distinctive box so inputs and focus are easy to identify.
 
 Acceptance criteria:
 
-- Review and record the job-template launch and survey API contracts in
-  `docs/API_CONTRACT.md` before implementation or fixture creation. Cover launch
-  permissions, prompt settings, required inputs, enabled surveys, variable
-  acceptance/precedence, ignored fields, and response semantics for both
-  connection modes. Record the exact upstream revision used as supporting evidence.
-- Add API operations and focused resource types for reading launch requirements,
-  retrieving an enabled survey, and submitting a job-template launch. Follow
-  existing authentication, route validation, safe-error, and context conventions.
-- Show the launch action, its shortcut, and availability in job-template details
-  and contextual help. Explain unsupported, permission-denied, and unknown
-  capability states; preserve the existing template-jobs table and navigation.
-- When a survey is enabled, render its questions in order with labels,
-  descriptions, defaults, required/optional state, and controls appropriate to
-  the reviewed question types. Validate required answers, choices, numeric
-  bounds, and length constraints before submission. Explain unsupported question
-  types or required launch inputs the form cannot supply.
-- Always include a multiline `extra_vars` editor, including when the template has
-  no enabled survey. Allow manual variable definition and validate the supported
-  structured format as a variable mapping, with actionable input errors. Explain
-  when the controller's prompt settings restrict manually supplied variables.
-- Define and document how survey answers and manual `extra_vars` combine,
-  including duplicate variable names and omitted optional answers, according to
-  the reviewed controller contract. Surface conflicting or rejected inputs so
-  users understand which values will be submitted and accepted.
-- Tab cycles focus through every survey field, the `extra_vars` editor, and the
-  form's action controls; Shift-Tab moves backward. Show the focused control and
-  keep it visible when scrolling or resizing. Tab changes focus rather than
-  inserting indentation in the editor. Without a survey, retain the same focus
-  behavior for the editor and action controls.
-- Route ordinary typing to the focused input, including characters used by global
-  shortcuts. Keep multiline editing distinct from submission, provide explicit
-  launch/cancel controls, and support Esc to dismiss and Ctrl-C to quit. Dismissal
-  sends no launch request and restores the template's previous context.
-- Identify the template by name and ID and clearly indicate that submitting
-  creates a new execution. Mask survey password inputs, sanitize external display
-  text, and never persist form values or expose secrets in notices or errors.
-- Submit at most one launch request per submission, show progress and safe
-  failures, and prevent duplicate submission while pending. Keep correctable form
-  inputs available after validation or definite request failures.
-- Treat the server as authoritative if permissions or launch requirements change.
-  Report ignored/rejected inputs and do not silently claim they were applied.
-  Never automatically retry an ambiguous launch response; explain the uncertain
-  outcome and allow users to refresh job lists before trying again.
-- On success, open the returned job's details and preserve back navigation to the
-  source template. Follow the reviewed contract if launch returns a workflow job
-  for a sliced job template. Retain the created job's identity if detail loading
-  fails, and ignore stale asynchronous results after navigation.
-- Add API tests for both prefixes, permissions, launch requirements, survey
-  decoding, variable payloads, successful responses, ignored fields, malformed
-  responses, and definite/ambiguous failures. Add TUI tests for survey defaults
-  and validation, password masking, manual variables, variable collisions,
-  templates without surveys, Tab/Shift-Tab focus, multiline editing, dismissal,
-  duplicate submission, successful navigation, stale results, and narrow terminals.
-- Update `SPEC.md`, `README.md`, contextual help, and relevant API documentation
-  during implementation, including supported input formats, variable precedence,
-  launch restrictions, and the remaining deployed AAP 2.6 verification limitation.
+- Present the launch form in a centered, rounded-border panel where terminal
+  dimensions permit, following the cancel/relaunch prompts' spacing and styling
+  conventions. Keep the template name and ID, the new-execution notice, and
+  explicit Launch/Cancel controls clear.
+- Render every survey control in a separate bordered box, including text,
+  password, numeric, choice, multiselect, and multiline inputs. Give the manual
+  JSON/YAML `extra_vars` editor its own bordered box. Keep labels, descriptions,
+  required/optional indicators, choices, and validation feedback visibly
+  associated with their fields.
+- Distinguish the focused field or action with the existing theme's styles and
+  a visible non-color cue. Keep boxes and focus legible in light and dark themes.
+- Preserve Tab/Shift-Tab navigation, ordinary typing within the focused control,
+  multiline editing, password masking, variable validation, and explicit
+  submission. Esc dismisses without launching; Ctrl-C quits.
+- Account for borders and padding when sizing and scrolling the form. Keep the
+  focused input and cursor visible as focus moves or the terminal resizes.
+  On narrow or short terminals, simplify decoration while keeping inputs,
+  actions, and contextual help usable without overflowing the frame.
+- Show loading, submission, validation, and safe failure states within the prompt.
+  Preserve existing launch permissions, variable handling, duplicate-submission
+  prevention, ambiguous-outcome handling, and successful/back navigation.
+- Add focused TUI regression tests for the bordered panel and field boxes,
+  focus visibility, scrolling/resizing, narrow and short terminals, templates
+  with and without surveys, and retained editing/dismissal/submission behavior.
+  Use existing launch tests and fake readers; no API contract changes are planned.
+- Update relevant user documentation and contextual help to reflect the prompt
+  presentation and any layout-specific navigation guidance.
 
-Implemented and verified offline: job-template details expose `L` launch and
-start-capability reasons. The focused form reads current launch requirements and
-all seven reviewed survey question types, validates defaults/answers and bounds,
-masks passwords, and preserves saved password defaults. JSON/YAML manual input
-uses one bounded mapping with duplicate-key and survey-collision checks; numeric
-precision is preserved. Tab/Shift-Tab cycles fields, the multiline editor, and
-action buttons. Submission rechecks permissions/schema, sends one POST, reports
-ignored inputs, and opens the created playbook or sliced workflow job while
-preserving the source template. Definite failures retain inputs; ambiguous
-outcomes disable resubmission and require checking Jobs. Stale results are ignored.
-API, form, rendering, and integration tests cover both connection modes and the
-specified launch cases. User/specification/API documentation is synchronized.
-Deployed AAP 2.6 and interactive terminal validation remain unavailable.
+Implemented and verified offline: launch uses a centered rounded-border dialog,
+separate survey/variables boxes, double borders and text markers for focus,
+field-specific validation feedback, and visible action controls. Scrolling and
+resizing keep the focused field and cursor visible; small terminals reduce
+decoration and prioritize editing and dismissal. Existing launch behavior is
+preserved. TUI regression tests cover all survey control types, templates without
+surveys, both themes, focus and resizing, progress/errors, and ambiguous outcomes.
+`go test ./...` and `go vet ./...` pass. README, specification, and contextual help
+are synchronized. Deployed AAP 2.6 and interactive terminal validation remain
+unavailable.
 
 For each implementation milestone: format changed Go files with `gofmt -w`, run
 `go test ./...` and `go vet ./...`, review changes for unintended scope, and update

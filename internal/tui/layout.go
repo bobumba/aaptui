@@ -261,7 +261,7 @@ func (m *Model) messagePanel(text string, width, limit int) []string {
 
 func (m *Model) screenHelp(width int) []string {
 	if m.launch != nil {
-		return clipLines([]string{m.helpLine("Tab/Shift-Tab focus · Enter edit/activate"), m.helpLine("↑/↓ choose · Space toggle · Esc dismiss · Ctrl-C quit")}, width)
+		return m.launchHelp(width)
 	}
 	var lines []string
 	back := "Esc back · q quit · Ctrl-C quit"

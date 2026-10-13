@@ -16,6 +16,11 @@ func (m *Model) View() tea.View {
 		v.AltScreen = true
 		return v
 	}
+	if m.launch != nil {
+		v := tea.NewView(m.launchView())
+		v.AltScreen = true
+		return v
+	}
 	l := m.layout()
 	body := m.body(l.width, l.bodyHeight)
 	if len(body) > l.bodyHeight {
@@ -37,9 +42,6 @@ func (m *Model) View() tea.View {
 }
 
 func (m *Model) body(width, height int) []string {
-	if m.launch != nil {
-		return m.launchBody(width, height)
-	}
 	var lines []string
 	rows := min(aap.OutputLines, height)
 	start := max(0, m.selected-rows+1)

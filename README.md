@@ -27,9 +27,15 @@ switches focus between details and the table; arrows scroll details or select
 a job. Enter opens job details and their existing output controls. Use `n`/`p`
 for pages and `r` to refresh the table; Esc restores the template and page.
 
-Press `L` in job-template details to open the launch form. Tab/Shift-Tab moves
-through survey fields, the multiline `extra_vars` editor, and Launch/Cancel
-buttons. Use arrows and Space/Enter for choice questions. Enter inserts a newline
+Press `L` in job-template details to open a centered launch dialog styled like
+the cancel/relaunch prompts. Each survey field and the multiline `extra_vars`
+editor has a separate box; the focused box uses a double border and a `>` marker.
+The form scrolls to keep the focused input and cursor visible as you move or
+resize the terminal. Validation feedback identifies the field and also appears
+inside its box when space permits. Short or narrow terminals simplify borders
+and help; enlarge the terminal for full labels, descriptions, and controls.
+Tab/Shift-Tab moves through survey fields, the multiline `extra_vars` editor,
+and Launch/Cancel buttons. Use arrows and Space/Enter for choice questions. Enter inserts a newline
 in textarea and `extra_vars` fields; launch only by activating the Launch button.
 Left/right, Home/End, Backspace/Delete, and up/down edit text; Ctrl-U clears the
 focused input. Pasting is supported. Esc dismisses; Ctrl-C quits. Characters such
@@ -184,9 +190,11 @@ remain usable without color.
 
 Lists align resource fields into columns and prioritize names and job statuses
 on narrow terminals. Details wrap and scroll, search keeps the input cursor
-visible, and cancellation uses a centered prompt that takes keyboard focus and
-identifies the job by name, ID, and type. Messages have a distinct panel. Help stays
-at the bottom, with compact hints on narrow terminals. Output text remains plain;
+visible, and cancellation/relaunch use centered prompts that take keyboard focus
+and identify the job by name, ID, and type. The launch dialog uses separate input
+boxes and keeps Launch/Cancel controls visible when space permits. Messages have
+a distinct panel. Help stays at the bottom, with compact hints on narrow
+terminals. Output text remains plain;
 following shows the newest lines when the terminal shrinks. Extremely small
 terminals show only the hints and content that fit; enlarge the terminal for
 full details and messages.

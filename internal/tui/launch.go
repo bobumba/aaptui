@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"unicode"
 
@@ -200,92 +199,4 @@ func (m *Model) pasteLaunch(text string) {
 	if err := input.insert(text, multiline); err != nil {
 		m.err = err
 	}
-}
-
-func (m *Model) launchBody(width, height int) []string {
-	if height <= 0 {
-		return nil
-	}
-	f := m.launch
-	if !f.ready {
-		if m.err != nil {
-			return []string{m.styles.warning.Render("Launch unavailable; Esc dismisses.")}
-		}
-		return []string{m.styles.warning.Render("Reading survey and launch requirements…; Esc dismisses.")}
-	}
-	lines := []string{m.styles.warning.Render("Submitting creates a new execution.")}
-	if !f.requirements.AskVariables {
-		lines = append(lines, m.styles.warning.Render("Manual variables require Prompt on launch."))
-	}
-	focusRow := 0
-	for i, q := range f.requirements.Questions {
-		label := fmt.Sprintf("%d. %s", i+1, m.launchText(q.Name))
-		label += " · " + q.Type
-		if q.Required {
-			label += " (required)"
-		} else {
-			label += " (optional)"
-		}
-		lines = append(lines, m.selectRow(label, f.focus == i, width))
-		if q.Description != "" {
-			lines = append(lines, m.styles.muted.Render(m.launchText(singleLine(q.Description))))
-		}
-		input := f.inputs[i]
-		switch q.Type {
-		case "multiplechoice", "multiselect":
-			start := max(0, f.choices[i]-1)
-			for j := start; j < min(len(q.Choices), start+3); j++ {
-				marker := "[ ] "
-				for _, value := range strings.Split(input.text, "\n") {
-					if value == q.Choices[j] {
-						marker = "[x] "
-					}
-				}
-				lines = append(lines, m.selectRow(marker+m.launchText(q.Choices[j]), f.focus == i && f.choices[i] == j, width))
-				if f.focus == i && f.choices[i] == j {
-					focusRow = len(lines) - 1
-				}
-			}
-		case "password":
-			value := strings.Repeat("*", min(20, len([]rune(input.text))))
-			if input.text == "$encrypted$" {
-				value = "(saved password default)"
-			}
-			if f.focus == i {
-				value += "_"
-				focusRow = len(lines)
-			}
-			lines = append(lines, "  "+value)
-		default:
-			rendered, cursorRow := input.render(m, max(1, width-2), f.focus == i)
-			if f.focus == i {
-				focusRow = len(lines) + cursorRow
-			}
-			for _, line := range rendered {
-				lines = append(lines, "  "+line)
-			}
-		}
-	}
-	lines = append(lines, m.selectRow("extra_vars (JSON or YAML; survey keys belong above)", f.focus == len(f.inputs), width))
-	rendered, cursorRow := f.extra.render(m, max(1, width-2), f.focus == len(f.inputs))
-	if f.focus == len(f.inputs) {
-		focusRow = len(lines) + cursorRow
-	}
-	for _, line := range rendered {
-		lines = append(lines, "  "+line)
-	}
-	launchLabel := "[ Launch job ]"
-	if f.uncertain {
-		launchLabel = "[ Launch disabled: check Jobs before retrying ]"
-	}
-	lines = append(lines, m.selectRow(launchLabel, f.focus == len(f.inputs)+1, width))
-	if f.focus == len(f.inputs)+1 {
-		focusRow = len(lines) - 1
-	}
-	lines = append(lines, m.selectRow("[ Cancel ]", f.focus == len(f.inputs)+2, width))
-	if f.focus == len(f.inputs)+2 {
-		focusRow = len(lines) - 1
-	}
-	top := min(max(0, focusRow-height/2), max(0, len(lines)-height))
-	return lines[top:min(len(lines), top+height)]
 }

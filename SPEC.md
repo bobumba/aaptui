@@ -68,6 +68,15 @@ activates a focused control; it never submits from a survey or variables field.
 Mask password input and preserve controller password defaults without displaying
 their values. Ordinary text, including `q`, stays in the focused input.
 
+Use a centered, rounded-border launch dialog consistent with cancel/relaunch
+prompts. Give every survey control and the manual variables editor a separate
+box, with a double border and `>` marker for focus in both light and dark themes.
+Keep labels, required/optional state, descriptions, and validation feedback
+associated with their inputs. Show launch progress and safe failures within the
+dialog and keep Launch/Cancel controls visible where space permits. Scroll to
+keep the focused field and cursor visible when navigating or resizing; simplify
+decoration on small terminals before sacrificing editing or dismissal controls.
+
 Manual variables accept one bounded JSON/YAML mapping. Reject duplicate keys and
 survey/manual collisions. Unrestricted manual variables require the template's
 Prompt on launch setting. Omit optional blank answers according to the reviewed
