@@ -41,7 +41,7 @@ func (f *launchForm) setRequirements(r aap.LaunchRequirements) {
 			}
 		}
 	}
-	f.extra = launchInput{text: "{}", cursor: 2}
+	f.extra = launchInput{}
 	f.ready = true
 }
 

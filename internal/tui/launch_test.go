@@ -107,6 +107,81 @@ func sampleQuestions() []aap.SurveyQuestion {
 	}
 }
 
+func TestLaunchEditorStartsEmptyOnReopen(t *testing.T) {
+	f := &fakeLaunch{requirements: aap.LaunchRequirements{AskVariables: true, Questions: sampleQuestions()}}
+	m := launchModel(t, f)
+	for attempt := 0; attempt < 2; attempt++ {
+		openLaunch(t, m)
+		if m.launch.extra.text != "" || m.launch.extra.cursor != 0 {
+			t.Fatalf("editor prepopulated on attempt %d: %+v", attempt, m.launch.extra)
+		}
+		for i, question := range f.requirements.Questions {
+			if m.launch.inputs[i].text != question.Default {
+				t.Fatal("survey default changed")
+			}
+		}
+		for range m.launch.inputs {
+			m.Update(launchKey("tab"))
+		}
+		m.Update(tea.PasteMsg{Content: "release: v2"})
+		m.Update(key("esc"))
+	}
+}
+
+func TestLaunchEditorDirectInputAndBlankSubmission(t *testing.T) {
+	for _, test := range []struct {
+		name, input string
+		ask         bool
+	}{
+		{"json", `{"release":"v2","debug":false}`, true},
+		{"yaml", "release: v2\ndebug: false", true},
+		{"blank", "", false},
+		{"whitespace", " \n  ", false},
+	} {
+		for _, paste := range []bool{false, true} {
+			method := "typing"
+			if paste {
+				method = "paste"
+			}
+			t.Run(test.name+"/"+method, func(t *testing.T) {
+				f := &fakeLaunch{requirements: aap.LaunchRequirements{AskVariables: test.ask}}
+				m := launchModel(t, f)
+				openLaunch(t, m)
+				if paste {
+					m.Update(tea.PasteMsg{Content: test.input})
+				} else {
+					for _, r := range test.input {
+						if r == '\n' {
+							m.Update(key("enter"))
+						} else {
+							m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+						}
+					}
+				}
+				if m.launch.extra.text != test.input || m.launch.extra.cursor != len([]rune(test.input)) || f.posts != 0 {
+					t.Fatal("input changed or submitted prematurely")
+				}
+				if !strings.Contains(ansi.Strip(m.View().Content), "JSON or YAML") {
+					t.Fatal("format hint missing")
+				}
+				m.Update(launchKey("tab"))
+				_, cmd := m.Update(key("enter"))
+				if cmd == nil {
+					t.Fatal("launch failed validation", m.err)
+				}
+				m.Update(cmd())
+				if f.posts != 1 || f.manual != test.input || m.launch != nil || m.screen != jobScreen {
+					t.Fatal("manual input not submitted unchanged")
+				}
+				vars, err := aap.ParseExtraVars(f.manual)
+				if err != nil || test.ask && (vars["release"] != "v2" || vars["debug"] != false) || !test.ask && len(vars) != 0 {
+					t.Fatalf("wrong parsed variables: %v, %v", vars, err)
+				}
+			})
+		}
+	}
+}
+
 func TestLaunchFormFocusInputsAndNavigation(t *testing.T) {
 	f := &fakeLaunch{requirements: aap.LaunchRequirements{AskVariables: true, Questions: sampleQuestions()}}
 	m := launchModel(t, f)
@@ -166,7 +241,6 @@ func TestLaunchFormFocusInputsAndNavigation(t *testing.T) {
 		t.Fatal("textarea enter submitted")
 	}
 	m.Update(launchKey("tab"))
-	m.Update(key("ctrl+u"))
 	m.Update(tea.PasteMsg{Content: "manual: true"})
 	m.Update(key("enter"))
 	m.Update(key("extra: 2"))

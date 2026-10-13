@@ -502,6 +502,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err == nil {
 			switch v := msg.value.(type) {
+			case templateDetailsMsg:
+				m.templateDetail = v.details
 			case templateJobsMsg:
 				m.templateJobPage = v.page
 				m.selected = 0
@@ -691,6 +693,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.readOutput(start), m.nextOutput())
 			}
 		case "r":
+			if m.screen == templateScreen && m.templateDetail.Ref.Type == aap.PlaybookTemplate && m.templates != nil && (!m.hasTemplateJobs() || !m.templateJobsFocus) {
+				if m.loading {
+					return m, nil
+				}
+				ref := m.templateDetail.Ref
+				return m, m.begin(func(ctx context.Context) (any, error) {
+					d, err := m.templates.Template(ctx, ref)
+					return templateDetailsMsg{d}, err
+				})
+			}
 			if m.screen == inventoryScreen || m.screen == groupScreen || m.screen == hostScreen {
 				return m, m.loadObjectDetails()
 			}

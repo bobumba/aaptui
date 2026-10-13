@@ -15,6 +15,7 @@ type TemplateJobsReader interface {
 }
 
 type templateJobsMsg struct{ page aap.Page[aap.JobSummary] }
+type templateDetailsMsg struct{ details aap.TemplateDetails }
 
 func (m *Model) WithTemplateJobs(reader TemplateJobsReader) *Model { m.templateJobs = reader; return m }
 

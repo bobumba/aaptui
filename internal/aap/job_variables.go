@@ -11,8 +11,8 @@ type JobVariable struct {
 	Name, Value string
 }
 
-// JobVariables holds the recorded execution variables. A nil *JobVariables means
-// the job type is unsupported; an empty Values slice with no reason means empty.
+// JobVariables holds sanitized job or job-template variables for display. A nil
+// pointer means unsupported; an empty Values slice with no reason means empty.
 type JobVariables struct {
 	Values            []JobVariable
 	UnavailableReason string
@@ -26,6 +26,10 @@ func (c *Client) jobVariables(kind JobType, raw json.RawMessage) *JobVariables {
 	default:
 		return nil
 	}
+	return c.variableMapping(raw)
+}
+
+func (c *Client) variableMapping(raw json.RawMessage) *JobVariables {
 	unavailable := func(reason string) *JobVariables {
 		return &JobVariables{UnavailableReason: reason}
 	}

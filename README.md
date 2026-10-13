@@ -25,7 +25,8 @@ Job-template details also show a table of that template's jobs, newest first,
 with ID, name, status, and start time (columns adapt to terminal width). Tab
 switches focus between details and the table; arrows scroll details or select
 a job. Enter opens job details and their existing output controls. Use `n`/`p`
-for pages and `r` to refresh the table; Esc restores the template and page.
+for pages and `r` to refresh the focused details or table; Esc restores the
+template and page.
 
 Press `L` in job-template details to open a centered launch dialog styled like
 the cancel/relaunch prompts. Each survey field and the multiline `extra_vars`
@@ -44,17 +45,18 @@ as `q` remain input while the form is open.
 Surveys support text, textarea, password, integer, float, multiplechoice, and
 multiselect questions, with defaults and required/length/numeric validation.
 Password fields are masked; a saved password default remains on the controller
-unless replaced. The manual editor accepts JSON or YAML, for example
-`{"release": "v2", "debug": false}` or:
+unless replaced. The manual editor starts empty and accepts JSON or YAML, for
+example `{"release": "v2", "debug": false}` or:
 
 ```yaml
 release: v2
 debug: false
 ```
 
-Use Ctrl-U to replace the editor's initial `{}` with YAML. Input must be one
-mapping with string keys and JSON-compatible values. Duplicate keys, YAML
-aliases/merge keys/custom tags, and more than 64 KiB of launch input are rejected;
+Type or paste either format directly; blank or whitespace-only input adds no
+manual overrides. Input must be one mapping with string keys and JSON-compatible
+values. Duplicate keys, YAML aliases/merge keys/custom tags, and more than 64 KiB
+of launch input are rejected;
 quote dates to pass them as strings. Define survey variables in their survey
 controls; matching manual keys are rejected. Arbitrary manual variables require
 **Prompt on launch** for Extra Variables. Blank optional numeric/choice/password
@@ -98,25 +100,33 @@ label/value tables with bold, theme-aware colored labels. Wide terminals show
 two field/value pairs per row; narrower terminals use one pair per row, with a
 stacked layout at very small widths. Descriptions and multiline values span the
 full table width. Long labels and values wrap, and all detail rows can be scrolled.
-Job views show **Capabilities**, **Job details**, and **Survey / Extra variables**.
+Job views show **Capabilities**, **Job details**, and a **Survey / Extra variables**
+box. Job-template details show configured variables in an **Extra variables** box.
+Each view groups all variables into one bordered box with theme-aware styling.
+The box wraps within the terminal width and scrolls with other details; extremely
+narrow terminals omit its border to leave room for content.
 Capabilities list output
 (`o`), workflow children (`w`), cancellation (`c`), and relaunch (`R`) with their
 availability and reasons. Execution settings and other job fields appear under
 Job details. Cancellation still requires confirmation.
 
-Survey / Extra variables shows the values recorded for playbook jobs, workflow
-jobs, ad hoc commands, and system jobs. Survey answers and other variables appear
-together, sorted by variable name; current template/survey definitions are not
+The Survey / Extra variables box shows the values recorded for playbook jobs,
+workflow jobs, ad hoc commands, and system jobs. Survey answers and other variables
+appear together, sorted by variable name; current template/survey definitions are not
 used to infer their origins. Nested values use formatted JSON, and multiline
 answers preserve line breaks. Empty strings show `""`; false, zero, and null remain
-visible. Use arrows or `j`/`k` to scroll the section. Empty, unavailable, malformed,
-oversized, and unsupported data have distinct messages; other job fields remain
+visible. Job-template variables use the same formatting and limits, showing the
+template's configured values rather than recorded execution values or survey
+defaults. Use arrows or `j`/`k` to scroll the box and `r` to refresh details (focus
+details with Tab when the template's job table is shown). Empty, unavailable,
+malformed, oversized, and unsupported data have distinct messages; other job fields remain
 readable. Server password masks are retained and the configured token is redacted
 from names and values. Variable data stays in memory, with 64 KiB decoded-input
 and display limits and at most 64 nesting levels.
 
-Credential references show only IDs/names; credential contents, other resource
-variables, module arguments, job environments, and artifacts are not displayed.
+Credential references show only IDs/names; credential contents, variables outside
+jobs and job templates, module arguments, job environments, and artifacts are not
+displayed.
 SCM URLs omit embedded credentials, query parameters, and fragments.
 
 On workflow children, `d` opens node details, including template/child references,

@@ -124,6 +124,8 @@ func (f *detailFields) source(d *aap.InventorySettings) {
 
 func (m *Model) details(width int) []string {
 	var fields detailFields
+	var variables *aap.JobVariables
+	showVariables := false
 	fields.section("Details")
 	switch m.screen {
 	case templateScreen:
@@ -151,6 +153,9 @@ func (m *Model) details(width int) []string {
 		fields.source(d.Inventory)
 		fields.text("System job", d.SystemJobType)
 		fields.number("Approval timeout (seconds)", d.ApprovalTimeout)
+		if d.Ref.Type == aap.PlaybookTemplate {
+			variables, showVariables = d.ExtraVars, true
+		}
 	case inventoryScreen:
 		d := m.inventoryDetail
 		fields.identity(d.ID, d.Name, "inventory", d.Description)
@@ -259,24 +264,17 @@ func (m *Model) details(width int) []string {
 		}
 		fields.flag("Approval timed out", d.TimedOut)
 		fields.flag("Event processing finished", d.EventProcessingFinished)
-		fields.section("Survey / Extra variables")
-		switch {
-		case d.ExtraVars == nil:
-			fields.field("Variables", "Not supported for this job type")
-		case d.ExtraVars.UnavailableReason != "":
-			fields.field("Variables", "Unavailable · "+d.ExtraVars.UnavailableReason)
-		case len(d.ExtraVars.Values) == 0:
-			fields.field("Variables", "No recorded variables")
-		default:
-			for _, variable := range d.ExtraVars.Values {
-				fields.field(variable.Name, variable.Value)
-			}
-		}
+		variables, showVariables = d.ExtraVars, true
 	}
 	if m.screen == jobScreen {
 		fields = append(m.capabilityFields(), fields...)
 	}
-	return m.renderDetailFields(fields, width)
+	lines := m.renderDetailFields(fields, width)
+	if showVariables && width > 0 {
+		lines = append(lines, "")
+		lines = append(lines, m.variableBox(variables, width, m.screen == templateScreen)...)
+	}
+	return lines
 }
 
 func (m *Model) capabilityFields() detailFields {

@@ -77,8 +77,11 @@ dialog and keep Launch/Cancel controls visible where space permits. Scroll to
 keep the focused field and cursor visible when navigating or resizing; simplify
 decoration on small terminals before sacrificing editing or dismissal controls.
 
-Manual variables accept one bounded JSON/YAML mapping. Reject duplicate keys and
-survey/manual collisions. Unrestricted manual variables require the template's
+The manual extra-vars editor starts empty, with its cursor at the beginning;
+blank or whitespace-only input adds no manual overrides and retains controller
+template defaults and required-variable checks. Manual variables accept one
+bounded JSON/YAML mapping. Reject duplicate keys and survey/manual collisions.
+Unrestricted manual variables require the template's
 Prompt on launch setting. Omit optional blank answers according to the reviewed
 contract. Recheck permissions and current requirements before launching; explain
 unsupported required inventory, credential, or credential-password inputs.
@@ -163,11 +166,11 @@ endpoint-by-endpoint API review. Include available timestamps, ownership and
 related resource names/IDs, execution settings, SCM revisions and update settings,
 inventory counts and failure flags, host state, and status explanations. Preserve
 false/zero values and handle absent fields without inventing data. Do not display
-credential contents, variables from other resource types, environments, module
+credential contents, variables outside jobs and job templates, environments, module
 arguments, or artifacts. Sanitize external text and redact the configured token.
 
 Job views place common and type-specific fields under Job details. A separate
-Survey / Extra variables section displays recorded `extra_vars` for playbook
+Survey / Extra variables box displays recorded `extra_vars` for playbook
 jobs, workflow jobs, ad hoc commands, and system jobs, including survey answers.
 Use execution values rather than current template defaults or survey definitions;
 do not infer variable origins. Show sorted names and readable values, preserving
@@ -176,6 +179,16 @@ answers. Preserve server password masks and sanitize/redact recursively before
 display. Keep values in memory only, with 64 KiB decoded-input and display budgets
 and at most 64 nesting levels. Distinguish empty, unavailable, malformed,
 oversized, and unsupported data without hiding other job fields.
+
+Job-template details display configured `extra_vars` in an Extra variables box,
+using the same decoding, display limits, and sanitization as recorded job values.
+Do not fetch current survey definitions or launch requirements for this display.
+Group all variables or the data-state message inside one clearly labeled,
+theme-aware bordered box in each view. Wrap its contents to the available width
+and use existing detail scrolling and resizing; omit decoration on extremely
+narrow terminals. Keep other resource variables excluded.
+In job-template details, `r` refreshes the focused details or job table without
+discarding the other pane's state.
 
 A separate Capabilities section identifies output (`o`), workflow children
 (`w`), cancellation (`c`), and relaunch (`R`), their availability, and any reasons.

@@ -2,6 +2,7 @@ package aap
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 )
@@ -57,6 +58,7 @@ type TemplateDetails struct {
 	Inventory              *InventorySettings
 	SystemJobType          string
 	ApprovalTimeout        *int
+	ExtraVars              *JobVariables
 }
 type wireResource struct {
 	wireDetails
@@ -127,17 +129,21 @@ func (c *Client) Template(ctx context.Context, ref TemplateRef) (TemplateDetails
 	if ref.ID <= 0 {
 		return TemplateDetails{}, apiError(Malformed, "read template")
 	}
-	var w wireResource
+	var w struct {
+		wireResource
+		ExtraVars json.RawMessage `json:"extra_vars"`
+	}
 	if err := c.request(ctx, http.MethodGet, c.endpoint(fmt.Sprintf("%s/%d/", templateCollection(ref.Type), ref.ID)), "read template", &w); err != nil {
 		return TemplateDetails{}, err
 	}
 	if w.ID != ref.ID || !validType(w.Type) || TemplateType(c.CleanText(w.Type)) != ref.Type {
 		return TemplateDetails{}, apiError(Malformed, "read template")
 	}
-	d := TemplateDetails{TemplateSummary: c.templateSummary(w), Metadata: c.metadata(w.wireDetails), Options: c.executionSettings(w),
+	d := TemplateDetails{TemplateSummary: c.templateSummary(w.wireResource), Metadata: c.metadata(w.wireDetails), Options: c.executionSettings(w.wireResource),
 		LastJobRun: c.cleanLabel(w.LastJobRun), NextJobRun: c.cleanLabel(w.NextJobRun), LastJobFailed: w.LastJobFailed}
 	d.Launch = Capability{Unavailable, "Launch is not supported for this template type"}
 	if ref.Type == PlaybookTemplate {
+		d.ExtraVars = c.variableMapping(w.ExtraVars)
 		d.startPermission = w.Summary.UserCapabilities.Start
 		d.launch, d.survey = w.Related["launch"], w.Related["survey_spec"]
 		for _, item := range []struct{ link, suffix string }{{d.launch, "launch/"}, {d.survey, "survey_spec/"}} {
@@ -163,9 +169,9 @@ func (c *Client) Template(ctx context.Context, ref TemplateRef) (TemplateDetails
 	case PlaybookTemplate:
 		d.Playbook = &PlaybookSettings{c.CleanText(w.Playbook), c.CleanText(w.JobType), c.CleanText(w.Limit), w.Inventory, w.Project}
 	case ProjectTemplate:
-		d.Project = c.projectSettings(w)
+		d.Project = c.projectSettings(w.wireResource)
 	case InventoryTemplate:
-		d.Inventory = c.inventorySettings(w)
+		d.Inventory = c.inventorySettings(w.wireResource)
 	case SystemTemplate:
 		d.SystemJobType = c.CleanText(w.JobType)
 	case ApprovalTemplate:

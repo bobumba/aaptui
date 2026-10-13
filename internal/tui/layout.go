@@ -315,6 +315,9 @@ func (m *Model) screenHelp(width int) []string {
 			lines = []string{"Tab details/jobs · ↑/↓ move", "Enter job · r refresh · n/p page", back}
 		}
 	}
+	if m.screen == templateScreen && !m.hasTemplateJobs() && m.templateDetail.Ref.Type == aap.PlaybookTemplate && m.templates != nil {
+		lines = []string{"↑/↓ scroll · r refresh", back}
+	}
 	if m.screen == templateScreen && m.templateDetail.Ref.Type == aap.PlaybookTemplate && m.launcher != nil {
 		lines[0] = "L launch job · " + lines[0]
 	}

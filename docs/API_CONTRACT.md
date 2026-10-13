@@ -48,6 +48,25 @@ recursively, and token-redacted before exposure to the TUI. Preserve server mask
 do not persist values or include them in errors. Synthetic tests exercise both
 API prefixes; no deployed AAP validation is available.
 
+### Job-template extra variables
+
+Reviewed 2026-10-12 against the same pinned AWX 24.6.1
+[serializers.py](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/api/serializers.py).
+`JobTemplateSerializer` inherits `extra_vars` from `JobOptionsSerializer` and
+validates it with `vars_validate_or_raise`. Read configured variables from
+`job_templates/{id}/`; do not fetch survey definitions or launch requirements to
+populate this display. This is separate from a job's recorded execution values.
+Accept mapping strings (JSON or YAML) and defensively accept objects, using the
+same sanitized display representation, budgets, numeric precision, and safe
+failure states as job variables. Preserve any masks returned by the server;
+template variables are not guaranteed to have survey-password masking. Do not
+recover passwords or persist values. Other template/resource variables remain
+excluded. Synthetic tests cover both prefixes; AAP 2.6 remains unverified.
+
+Job and job-template detail views enclose all variables and any data-state
+message in one labeled, theme-aware box, with wrapping and detail scrolling.
+Extremely narrow terminals omit decoration to retain readable content.
+
 ### Collections
 
 Header and template-job contracts reviewed 2026-10-12 against the same AWX
@@ -177,7 +196,7 @@ show a placeholder; invalid times show `Unavailable`. Displayed times use UTC.
 | `system_jobs/{id}/` | Common job state, `job_type`, and recorded `extra_vars`; existing bounded stdout handling remains separate. | `result_stdout` belongs in the output view rather than details. |
 | `workflow_approvals/{id}/` | Common job state, available timeout, `approval_expiration`, and `timed_out`. | `can_approve_or_deny` describes approval mutations outside scope. |
 | `unified_jobs/{id}/` (unknown types) | Common metadata, launch/status/failure/timing fields, returned execution settings, template/ancestor/workflow references, and explicit capability state. | Unknown type-specific payloads are not dumped as arbitrary JSON. |
-| `job_templates/`, `job_templates/{id}/` | Existing list summary; details add common metadata, run history, playbook, execution settings, survey/become/diff/simultaneous flags, and credential references. Launch reads validated related links and start capability; prompt settings and survey inputs are read separately by the launch form. | `host_config_key`, template `extra_vars`, webhook settings, and legacy runtime configuration stay out of resource details as secrets or unsupported configuration. |
+| `job_templates/`, `job_templates/{id}/` | Existing list summary; details add common metadata, run history, playbook, execution settings, survey/become/diff/simultaneous flags, credential references, and configured `extra_vars`. Launch reads validated related links and start capability; prompt settings and survey inputs are read separately by the launch form. | `host_config_key`, webhook settings, and legacy runtime configuration stay out of resource details as secrets or unsupported configuration. |
 | `workflow_job_templates/{id}/` | Common metadata/run history, inventory, limit, branch/tags, survey and simultaneous-execution flags. | `extra_vars`, webhook data and launch-prompt flags have the same exclusions as job templates. |
 | `projects/`, `projects/{id}/` | Existing list summary; details add common metadata/run history, SCM type/repository/branch/revision/refspec/local path, clean/submodule/delete/update flags, cache timeout, branch override, timeout and default environment/credential references. | `last_updated` and `last_update_failed` are compatibility aliases for run history; legacy virtualenv and signature-validation configuration are outside supported operations. Repository URLs omit userinfo, query and fragment. |
 | `inventory_sources/{id}/` | Common metadata/run history, inventory/source-project references, source/path/branch/host filter, overwrite and update flags, cache timeout, verbosity/limit/timeout and credential references. | `source_vars`, enabled-variable values and custom runtime configuration are excluded; update history aliases duplicate run history. |
@@ -202,8 +221,9 @@ All object endpoints also return `url`, `related`, and `summary_fields` as
 applicable. Only selected summary fields are decoded for display; validated
 related output/cancel/children links retain their existing behavior. Raw payloads,
 credential inputs, role maps, and launch-password inputs are never rendered as
-object details. Recorded job `extra_vars` are the explicit exception for variable
-data, with server masks and local redaction retained as described above.
+object details. Recorded job and configured job-template `extra_vars` are the
+explicit exceptions for variable data, with server masks and local redaction
+retained as described above.
 Output and cancellation endpoints retain their existing reviewed
 contracts below and are not expanded into object-field views.
 
@@ -344,8 +364,10 @@ manual variables require `ask_variables_on_launch`; otherwise only validated
 survey values are sent. Optional blank numeric/choice/password answers are
 omitted; optional blank text/textarea is sent as an empty string only when its
 minimum length is zero, otherwise omitted. Required answers are validated.
-Controller precedence is template variables, then valid survey defaults, then
-runtime variables. Form values remain in memory only; password controls mask
+The manual editor starts empty; blank or whitespace-only input sends no manual
+overrides. JSON objects and YAML mappings retain the same validation and prompt
+restrictions. Controller precedence is template variables, then valid survey
+defaults, then runtime variables. Form values remain in memory only; password controls mask
 input, and errors never include values or raw server bodies.
 
 Success is HTTP 201 with positive `id`, `type` (`job` or `workflow_job` for sliced
