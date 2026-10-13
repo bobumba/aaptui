@@ -1,7 +1,8 @@
 # AAP TUI Implementation Plan
 
-Status: all current milestones are complete and verified offline. Deployed AAP
-2.6 and manual interactive-terminal validation remain unavailable.
+Status: all milestones, including startup connection setup, are complete and
+verified offline. Deployed AAP 2.6 and manual interactive-terminal validation
+remain unavailable.
 
 This plan refines `SPEC.md` and follows `AGENTS.md`. No application code is
 authorized by the design discussion alone. Implement one milestone at a time
@@ -80,7 +81,8 @@ separate service, repository, or general-purpose utility layers.
 TUI dependencies, handles process signals, and ensures cleanup and terminal
 restoration. Dependency injection is explicit; there is no global client.
 
-`internal/config` loads connection settings and reads `AAP_TOKEN` separately.
+`internal/config` loads connection settings and secrets, including `AAP_TOKEN`
+and the private credential file, and owns credential persistence.
 It does not perform network requests or manage terminal state.
 
 `internal/aap` owns REST paths, authentication, TLS, pagination, JSON decoding,
@@ -98,25 +100,35 @@ loop mutates TUI state. Consumer-defined interfaces allow tests with fakes.
 Use JSON and the standard library. The default file is
 `$XDG_CONFIG_HOME/aaptui/config.json`, falling back to
 `~/.config/aaptui/config.json`. Accept `--config PATH` to choose a different file.
+Startup setup saves the API URL and token together in
+`~/.config/aaptui/config.json`, resolved using `os.UserHomeDir`, regardless of
+`XDG_CONFIG_HOME` or `--config`.
 
 | Setting | JSON field | Environment variable | Default |
 | --- | --- | --- | --- |
-| Server URL | `url` | `AAP_URL` | Required |
+| Server URL | `url` | `AAP_URL` | Prompt if missing |
 | Connection mode | `connection_mode` | `AAP_CONNECTION_MODE` | `gateway` |
 | TLS verification | `tls_verify` | `AAP_TLS_VERIFY` | `true` |
-| Authentication token | Forbidden | `AAP_TOKEN` | Required |
+| Authentication token | `token` in the private home file | `AAP_TOKEN` | Generate if missing |
 
-Apply defaults, then file values, then environment values. Track presence so
-explicit `false` is not treated as missing. An absent default file is acceptable;
-a missing explicitly selected file or malformed file is an error. Reject unknown
-configuration fields, including token fields. Reject empty required values,
-invalid booleans/modes, URL credentials, query strings, fragments, and unsupported
-schemes (anything other than HTTP or HTTPS) or non-root URL paths.
+Apply defaults, then the private home file, then the selected settings file when
+it differs from the home file, then environment values. Read a stored token only
+from the private home file, and use it only when its stored URL matches the
+effective API origin; `AAP_TOKEN` overrides it. Track presence so explicit `false`
+is not treated as missing. An absent default file is acceptable; a missing
+explicitly selected file or malformed file is an error. Reject unknown fields
+and token fields outside the private home file. Prompt for missing/blank required
+values; reject invalid nonempty tokens, invalid booleans/modes, URL credentials,
+query strings, fragments, unsupported schemes (anything other than HTTP or HTTPS),
+and non-root URL paths.
 
-Keep the token separate from printable settings, never persist it or accept it
-as an argument, and redact it from error text. Display the connection mode and
-whether TLS verification is disabled without displaying credentials. Identify
-HTTP connections and show that TLS verification is not applicable.
+Keep the token separate from printable settings and never accept it as an
+argument. Persist only the API URL and token as credentials; do not save login
+usernames or passwords. Use directory permissions `0700`, file permissions
+`0600`, and atomic writes that preserve unrelated settings. Redact credentials
+from errors and output. Display the connection mode and whether TLS verification
+is disabled without displaying credentials. Identify HTTP connections and show
+that TLS verification is not applicable.
 
 ## API behavior and Go types
 
@@ -226,43 +238,71 @@ explicit Launch/Cancel buttons; ordinary typing stays within the focused input.
 
 ## Milestones and acceptance tests
 
-### 1. Incorporate job extra variables into job details as YAML
+### 1. Prompt for missing connection settings and persist an API token
 
-The bordered `extra_vars` box at the bottom of job details is too prominent.
-Remove its border and incorporate the recorded job variables into the normal
-scrollable job details as a labeled YAML mapping, using the surrounding detail
-styling.
+On startup, resolve the existing connection settings and token sources. If the
+server URL or API token is missing, prompt interactively for the missing host URL
+and, when a token is needed, the user's username and password. Use those login
+credentials to generate an API token, then save the API URL and token together
+in `~/.config/aaptui/config.json` for subsequent launches, as specified in
+`SPEC.md`. Never save the username or password.
 
 Acceptance criteria:
 
-- Display `extra_vars` within job details without a separate bordered box. Keep
-  the label and YAML indentation readable in both supported themes.
-- Render sorted variable names, nested mappings and lists, numeric precision,
-  false/zero/null, blank strings, and multiline values correctly as YAML. Quote
-  keys and scalar values where needed to preserve their meaning.
-- Integrate with existing detail scrolling, wrapping, refresh, and terminal
-  resizing, including narrow terminals. Avoid duplicating the variable display.
-- Continue showing recorded execution values, including survey answers, with
-  clear empty, unavailable, unsupported, malformed, and oversized states.
-  Preserve password masking, token redaction, terminal-control sanitization,
-  decoding/display limits, and memory-only handling of variable values.
-- Keep this milestone focused on job details; retain the current job-template
-  variable display and launch-editor behavior.
-- Add regression tests for the borderless job display, YAML formatting and
-  value preservation, both themes, data states, and scrolling/resizing. Retain
-  existing variable security coverage and test any API representation changes.
-- Update `SPEC.md`, `docs/API_CONTRACT.md`, and `README.md` as needed to describe
-  the job YAML display and distinguish it from job-template variables.
+- Launch directly when a complete URL and token are available. Preserve supplied
+  values and prompt only for missing information; a supplied token requires no
+  username/password prompt. Connection mode and TLS verification retain their
+  existing defaults and validation.
+- Distinguish missing settings from invalid settings. Preserve errors for
+  malformed files, missing explicitly selected files, invalid URLs, invalid
+  modes/booleans, and invalid nonempty tokens. Validate prompted URLs with the
+  same rules as configured URLs before sending credentials.
+- Mask password entry, support cancellation and EOF, and restore terminal state
+  on every exit path. If required values are missing without an interactive
+  terminal, return a clear error without waiting for input.
+- Review and record the AAP 2.6 token-creation contract for gateway and direct
+  connections in `docs/API_CONTRACT.md` before implementing requests or deriving
+  fixtures. Explain unsupported authentication/deployment configurations without
+  assuming both connection modes share the same token endpoint.
+- Keep token generation in `internal/aap`, persistence in `internal/config`, and
+  startup orchestration and terminal handling in `cmd/aaptui`. Use explicit
+  dependencies, cancellable requests, existing TLS settings, and origin/redirect
+  protections. Do not automatically retry a token-creation request with an
+  uncertain outcome.
+- Save the API URL and generated token only after successful authentication.
+  Use a private application directory with permissions `0700` and credential
+  files with permissions `0600`, perform atomic writes, preserve unrelated
+  settings, and report storage failures without exposing secrets. Keep the
+  credential store under the home directory even when `XDG_CONFIG_HOME` or
+  `--config` points elsewhere.
+- Load saved credentials on later launches and preserve environment overrides.
+  Scope saved tokens to their API origin so changing the URL cannot send a saved
+  token to a different server. Never accept tokens as command-line arguments or
+  expose usernames, passwords, or tokens in application output, errors, or cache
+  metadata.
+- Implement the private credential-storage path, schema, and precedence defined
+  in `SPEC.md` and this plan's Configuration section. Update `README.md` and the
+  API contract during implementation to describe first-run setup, credential
+  reuse, removal/replacement, and offline verification limits.
+- Add regression tests for complete settings, each missing URL/token combination,
+  masked entry and cancellation, noninteractive startup, safe token-generation
+  failures, both connection modes, credential round trips, permissions, atomic
+  writes and storage failures, environment precedence, origin scoping, and
+  credential redaction. Use fake servers and temporary homes; do not write tests
+  against the developer's real home directory.
 
-Implemented and verified offline: recorded job variables appear once as a
-borderless `extra_vars` row within Job details. The API supplies sanitized YAML
-with sorted names, exact numeric text, nested mappings/lists, safe quoting, and
-multiline values. The detail table preserves YAML indentation and spaces while
-wrapping and scrolling. Template boxes and launch-editor behavior are retained.
-Regression tests cover both API prefixes, both themes, safe data states, numeric
-precision, special keys, blank strings/lines, masking/redaction, display limits,
-refresh, scrolling, and resizing. `go test ./...` and `go vet ./...` pass.
-README, specification, and API contract describe the new display.
+Implemented and verified offline: startup prompts for missing settings, masks
+passwords, creates gateway tokens with one request, and atomically stores
+origin-bound credentials in the private home configuration. Complete supplied
+connections launch directly; URL-only setup verifies the existing token before
+saving. Environment and selected-file precedence, noninteractive failures, and
+safe storage/authentication errors are covered by regression tests. Real-PTY
+tests verify masking and terminal restoration after completion, Escape, Ctrl-C,
+Ctrl-D, and signal cancellation; input EOF quits without waiting. Signal handling
+uses graceful prompt shutdown to avoid asynchronous terminal-reader cleanup.
+Direct mode retains supplied-token support and explains that prompted creation
+requires gateway mode. `go test ./...`, `go vet ./...`, and `go test -race ./...`
+pass. README, specification, and API contract are synchronized.
 
 For each implementation milestone: format changed Go files with `gofmt -w`, run
 `go test ./...` and `go vet ./...`, review changes for unintended scope, and update

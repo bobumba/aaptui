@@ -14,8 +14,9 @@ common AAP operations without using the web interface.
 - Connect through either the platform gateway or directly to
   automation controller.
 - Run interactively in a user's terminal from a Bash shell.
-- Use the user's existing API token and respect the permissions
-  associated with that token.
+- Use an existing API token when available, otherwise generate one
+  from interactively supplied login credentials, and respect the
+  permissions associated with the token.
 
 ## Configuration
 
@@ -30,9 +31,36 @@ Configuration:
 These connection settings may be supplied through environment
 variables or a configuration file.
 
-The authentication token must be supplied through the `AAP_TOKEN`
-environment variable. Do not accept or persist the token in the
-configuration file or command-line arguments.
+On startup, prompt for the host URL if it is missing. If no API token
+is available, prompt for the user's username and password and use them
+to generate an API token. Mask password entry and keep login credentials
+in memory only. When the URL and token are already available, launch
+without prompting. Connection mode and TLS verification retain their
+defaults; validate all supplied settings before sending credentials.
+
+Save the API URL and generated token together as JSON fields `url` and
+`token` in `~/.config/aaptui/config.json`, using the user's home directory
+and private directory/file permissions (`0700`/`0600`). Write atomically
+and preserve unrelated settings. This credential-storage path stays
+under the user's home directory even when `XDG_CONFIG_HOME` or `--config`
+selects a different settings file. Never persist the login username or
+password or accept tokens as command-line arguments.
+
+Load defaults, then the private home configuration, then a different
+selected settings file, then environment overrides. Read saved tokens
+only from the private home configuration, bound to its stored API URL;
+do not reuse a saved token for a different API origin. `AAP_TOKEN` remains
+supported and overrides the saved token. Missing values trigger prompts;
+invalid nonempty values and malformed files remain errors. Noninteractive
+startup with missing required values must fail clearly without waiting
+for input. Cancellation and failures must restore terminal state and
+must not expose credentials.
+
+Prompted token creation uses the AAP 2.6 gateway personal-access-token
+endpoint with write scope, subject to the user's existing permissions.
+Direct-controller mode requires an existing token. Keep requests cancellable,
+reject redirects, and never automatically retry uncertain token creation.
+If only the URL is prompted and a token is supplied, verify it before saving.
 
 Credentials must never be stored in source code or displayed in
 application output. TLS verification must be enabled by default.

@@ -28,7 +28,7 @@ func runWithArgs(args []string) (resultErr error) {
 	path := flags.String("config", "", "configuration file")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintln(os.Stdout, "Usage: aaptui [--config PATH]\nAuthentication: AAP_TOKEN environment variable")
+			fmt.Fprintln(os.Stdout, "Usage: aaptui [--config PATH]\nAuthentication: saved API token or AAP_TOKEN; missing settings prompt for gateway login")
 			return nil
 		}
 		return fmt.Errorf("invalid command-line options; use --help")
@@ -36,17 +36,24 @@ func runWithArgs(args []string) (resultErr error) {
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments")
 	}
-	s, secrets, err := config.Load(*path)
+	s, secrets, err := config.LoadForSetup(*path)
 	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	s, token, err := setupConnection(ctx, s, secrets.Token(), terminalStartupDependencies())
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return err
+	}
 	connection := fmt.Sprintf("%s · TLS verification: %t", s.Mode, s.TLSVerify)
 	if strings.HasPrefix(strings.ToLower(s.URL), "http://") {
 		connection = fmt.Sprintf("%s · HTTP · TLS verification: not applicable", s.Mode)
 	}
-	client, err := aap.NewClient(s, secrets.Token(), nil)
+	client, err := aap.NewClient(s, token, nil)
 	if err != nil {
 		return err
 	}

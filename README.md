@@ -152,6 +152,19 @@ terminal multiplexers reporting `TERM=screen` render list columns correctly.
 
 ```bash
 go build -o aaptui ./cmd/aaptui
+./aaptui
+```
+
+On first launch, enter the gateway host URL, username, and password when prompted.
+Password entry is masked. The app creates a gateway personal access token with
+write scope (subject to your existing permissions), then saves the URL and token
+together in `~/.config/aaptui/config.json`. It never saves the login username or
+password. Later launches reuse the saved connection without prompting. Esc,
+Ctrl-C, and Ctrl-D cancel setup; losing terminal input also cancels it.
+
+You can still use an existing token:
+
+```bash
 export AAP_URL=https://aap.example.com
 read -r -s -p 'AAP token: ' AAP_TOKEN
 export AAP_TOKEN
@@ -159,8 +172,11 @@ printf '\n'
 ./aaptui
 ```
 
-Use an existing token with the permissions you need. Tokens are accepted only
-through `AAP_TOKEN`; they are never written to configuration or cache metadata.
+Environment variables override saved settings. Complete supplied URL/token pairs
+launch without prompts or writing a credential file. If only the URL is missing,
+setup prompts for it, verifies the supplied token using `me/`, then saves the
+connection. Missing settings without an interactive terminal fail immediately.
+Tokens are never accepted as arguments or written to job-output cache metadata.
 
 ## Configuration
 
@@ -168,16 +184,39 @@ Copy [config.example.json](config.example.json) to
 `$XDG_CONFIG_HOME/aaptui/config.json`, or `~/.config/aaptui/config.json` when XDG
 configuration home is unset. Choose another file with `--config PATH`.
 An absent default file is fine; an absent explicit file is an error.
+Startup always loads `~/.config/aaptui/config.json` first. A different default or
+explicit settings file overrides its non-secret settings, then environment values
+override both files. Saved credentials always stay in the home configuration,
+even when XDG or `--config` selects another file; other files cannot contain tokens.
 
 | Setting | Environment override | Default |
 | --- | --- | --- |
-| `url` | `AAP_URL` | required |
+| `url` | `AAP_URL` | prompt if missing |
+| `token` (private home file only) | `AAP_TOKEN` | generate if missing |
 | `connection_mode` | `AAP_CONNECTION_MODE` | `gateway` |
 | `tls_verify` | `AAP_TLS_VERIFY` | `true` |
 
-Precedence is defaults, file, then environment (including explicit false and empty
-values). Empty required values, invalid modes/booleans, unknown JSON fields, token
-fields, null values, and configuration files larger than 64 KiB are rejected.
+Precedence is defaults, home file, selected file, then environment (including
+explicit false and empty values). Missing/blank URLs or tokens trigger setup;
+invalid nonempty settings, invalid tokens, unknown JSON fields, token fields
+outside the private home file, null values, and files larger than 64 KiB are rejected.
+Saved tokens are bound to their stored API origin; changing `AAP_URL` to another
+origin prompts for new credentials unless `AAP_TOKEN` is supplied.
+
+The home credential directory must have permissions `0700` and its regular
+configuration file `0600`; symlinked credential paths are rejected. Startup saves
+atomically and preserves other settings files. If an existing credential file has
+insecure permissions, correct them before launching:
+
+```bash
+chmod 700 ~/.config/aaptui
+chmod 600 ~/.config/aaptui/config.json
+```
+
+To replace an expired/revoked saved token, remove the `token` field from the home
+configuration and unset `AAP_TOKEN`, then relaunch to sign in again. Removing the
+file forgets both the connection and preferences. Local removal does not revoke
+the server token; revoke unwanted tokens in the gateway's token management UI.
 
 `gateway` uses `/api/controller/v2/`; `direct` uses `/api/v2/`. Direct token
 acceptance depends on the deployment. URLs must be HTTP or HTTPS origins without
@@ -197,9 +236,14 @@ quotes, or spaces), and that it has not expired or been revoked.
 
 For AAP 2.6, use a platform gateway OAuth 2 token with the gateway origin in
 `AAP_URL` and `AAP_CONNECTION_MODE=gateway`. Red Hat documents
-[gateway token authentication](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/develop-con_api_auth_methods)
+[gateway token authentication](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/secure-con_controller_api_oauth2_token)
 and the [move of token authentication to gateway](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/upgrade-assembly_upgrade_api_changes).
 Use `direct` only with a controller origin and a token that deployment accepts.
+Prompted token creation requires gateway mode; direct-controller mode requires
+an existing token. If gateway login fails, Basic authentication or external-user
+token creation may be disabled; use an existing token or contact the administrator.
+Token creation is attempted once. After an uncertain response or a storage failure,
+check gateway tokens before trying again, as a token may already have been created.
 Restart aaptui after changing environment settings; they are loaded at startup.
 HTTP 403 is a separate permission failure: check the token owner's access to the
 requested resources. Do not share token values when reporting errors.
@@ -318,7 +362,11 @@ go test -race ./...
 Tests exercise configuration, both API prefixes, TLS defaults, authentication,
 unsafe links/redirects, every required resource type, workflow nodes, bounded
 storage, older-history reload, retries, delayed final output, cleanup, and
-confirmation/status reconciliation. Integration tests drive the TUI against
+confirmation/status reconciliation. Startup regressions cover missing settings,
+gateway token creation, safe failures without retries, credential permissions,
+atomic replacement, environment overrides, and server scoping. Linux terminal
+tests check password masking, graceful cancellation and terminal restoration;
+input EOF is covered separately. Integration tests drive the TUI against
 synthetic HTTPS APIs for both modes, including inventory/group traversal, host
 pagination, identity/count header initialization, template-job paging, and
 survey/manual-variable launch with restoration of the source template. Launch

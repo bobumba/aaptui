@@ -19,6 +19,35 @@ Upstream behavior below is an assumption for AAP 2.6, not product evidence.
 
 ## Resources
 
+### Startup token creation
+
+Reviewed 2026-10-12 against Red Hat's AAP 2.6
+[OAuth 2 token authentication](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/secure-con_controller_api_oauth2_token)
+and [API changes](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/upgrade-assembly_upgrade_api_changes).
+The documented personal-access-token flow sends one Basic-authenticated POST to
+`/api/gateway/v1/tokens/` on the configured gateway origin and reads the `token`
+property from the JSON response. Authentication may be disabled for a deployment,
+and external/SSO users may require administrator configuration or an existing
+token. No browser/SSO authentication flow is modeled here.
+
+Token creation is separate from controller resource routes. Direct-controller
+mode continues accepting existing tokens; prompted token creation is unsupported
+there because the reviewed AAP 2.6 flow belongs to the gateway. Never send login
+credentials to a guessed controller endpoint or follow a redirect. Requests use
+the existing TLS verification setting, a deadline, a bounded response, and no
+automatic retries. A transport error or malformed successful response may leave
+a token on the server; report that uncertainty without showing a response body.
+Tests use synthetic fake-server responses, not captured AAP fixtures.
+
+Creation supplies JSON `description: "aaptui"` and `scope: "write"` to support
+the existing launch/cancel/relaunch operations. Red Hat's
+[token creation and scopes](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/secure-proc_controller_create_application)
+documents write scope, including read access, and a blank application for PATs.
+The JSON payload/response fixtures remain synthetic models of that flow. When
+setup only prompts for a URL and a token was supplied, use the existing `me/`
+reader to verify authentication before saving. Fully supplied connections retain
+the existing asynchronous header lookup and perform no startup mutation.
+
 ### Recorded job variables
 
 Reviewed 2026-10-12 against AWX 24.6.1 commit

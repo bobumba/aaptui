@@ -32,13 +32,22 @@ func NewClient(s config.Settings, token string, injected *http.Client) (*Client,
 	if err := config.Validate(s); err != nil {
 		return nil, apiError(Malformed, "configure client")
 	}
-	if strings.TrimSpace(token) == "" || strings.ContainsAny(token, "\r\n") {
+	if config.ValidateToken(token) != nil {
 		return nil, apiError(Authentication, "configure client")
 	}
 	base, err := url.Parse(s.URL)
 	if err != nil {
 		return nil, apiError(Malformed, "configure client")
 	}
+	h := connectionHTTPClient(s, injected)
+	prefix := "/api/controller/v2/"
+	if s.Mode == config.Direct {
+		prefix = "/api/v2/"
+	}
+	return &Client{base: base, prefix: prefix, token: token, http: h, timeout: 15 * time.Second}, nil
+}
+
+func connectionHTTPClient(s config.Settings, injected *http.Client) *http.Client {
 	h := http.Client{}
 	if injected != nil {
 		h = *injected
@@ -48,11 +57,7 @@ func NewClient(s config.Settings, token string, injected *http.Client) (*Client,
 		h.Transport = tr
 	}
 	h.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	prefix := "/api/controller/v2/"
-	if s.Mode == config.Direct {
-		prefix = "/api/v2/"
-	}
-	return &Client{base: base, prefix: prefix, token: token, http: &h, timeout: 15 * time.Second}, nil
+	return &h
 }
 func (c *Client) safeLink(link string) (*url.URL, error) {
 	if len(link) > 8192 || strings.Contains(link, "#") {

@@ -24,7 +24,7 @@ func TestLoad(t *testing.T) {
 		t.Fatal("secret printed")
 	}
 	env["AAP_TLS_VERIFY"] = "true"
-	s, _, err = load(path, lookup, os.UserHomeDir, os.Open)
+	s, _, err = load(path, lookup, func() (string, error) { return dir, nil }, os.Open)
 	if err != nil || !s.TLSVerify {
 		t.Fatal(s, err)
 	}
@@ -32,7 +32,7 @@ func TestLoad(t *testing.T) {
 		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 			t.Fatal(err)
 		}
-		_, _, err = load(path, lookup, os.UserHomeDir, os.Open)
+		_, _, err = load(path, lookup, func() (string, error) { return dir, nil }, os.Open)
 		if err == nil || strings.Contains(err.Error(), "secret") {
 			t.Fatalf("unsafe error %v", err)
 		}
@@ -42,10 +42,10 @@ func TestDiscovery(t *testing.T) {
 	dir := t.TempDir()
 	env := map[string]string{"AAP_URL": "https://example.org", "AAP_TOKEN": "secret", "XDG_CONFIG_HOME": dir}
 	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
-	if _, _, err := load("", lookup, os.UserHomeDir, os.Open); err != nil {
+	if _, _, err := load("", lookup, func() (string, error) { return dir, nil }, os.Open); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := load(filepath.Join(dir, "missing"), lookup, os.UserHomeDir, os.Open); err == nil {
+	if _, _, err := load(filepath.Join(dir, "missing"), lookup, func() (string, error) { return dir, nil }, os.Open); err == nil {
 		t.Fatal("missing explicit file accepted")
 	}
 	delete(env, "XDG_CONFIG_HOME")
@@ -103,7 +103,7 @@ func TestLoadHTTP(t *testing.T) {
 				t.Fatal(err)
 			}
 			lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
-			s, secrets, err := load(path, lookup, os.UserHomeDir, os.Open)
+			s, secrets, err := load(path, lookup, func() (string, error) { return t.TempDir(), nil }, os.Open)
 			if err != nil || s.URL != "http://localhost:8080" || s.Mode != Gateway || !s.TLSVerify || secrets.Token() != "secret" {
 				t.Fatalf("settings=%+v err=%v", s, err)
 			}
@@ -117,13 +117,14 @@ func TestInvalidEnvironmentAndOversizeFile(t *testing.T) {
 	}
 	base := map[string]string{"AAP_URL": "https://example.org", "AAP_TOKEN": "secret"}
 	lookup := func(k string) (string, bool) { v, ok := base[k]; return v, ok }
-	if _, _, err := load(path, lookup, os.UserHomeDir, os.Open); err == nil {
+	home := t.TempDir()
+	if _, _, err := load(path, lookup, func() (string, error) { return home, nil }, os.Open); err == nil {
 		t.Fatal("oversize file accepted")
 	}
 	for key, value := range map[string]string{"AAP_URL": "", "AAP_TOKEN": "", "AAP_CONNECTION_MODE": "bad secret mode", "AAP_TLS_VERIFY": "secret"} {
 		old, exists := base[key]
 		base[key] = value
-		_, _, err := load(filepath.Join(t.TempDir(), "missing"), lookup, os.UserHomeDir, os.Open)
+		_, _, err := load(filepath.Join(t.TempDir(), "missing"), lookup, func() (string, error) { return home, nil }, os.Open)
 		if err == nil || strings.Contains(err.Error(), "secret") {
 			t.Fatal("unsafe settings error", err)
 		}
