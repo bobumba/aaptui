@@ -146,7 +146,7 @@ show a placeholder; invalid times show `Unavailable`. Displayed times use UTC.
 | `system_jobs/{id}/` | Common job state and `job_type`; existing bounded stdout handling remains separate. | `extra_vars` are arbitrary secret-bearing configuration; `result_stdout` belongs in the output view rather than details. |
 | `workflow_approvals/{id}/` | Common job state, available timeout, `approval_expiration`, and `timed_out`. | `can_approve_or_deny` describes approval mutations outside scope. |
 | `unified_jobs/{id}/` (unknown types) | Common metadata, launch/status/failure/timing fields, returned execution settings, template/ancestor/workflow references, and explicit capability state. | Unknown type-specific payloads are not dumped as arbitrary JSON. |
-| `job_templates/`, `job_templates/{id}/` | Existing list summary; details add common metadata, run history, playbook, execution settings, survey/become/diff/simultaneous flags, and credential references. | `host_config_key`, `extra_vars`, webhook settings, legacy runtime configuration and launch-prompt flags are excluded as secrets or unsupported launch/edit configuration. |
+| `job_templates/`, `job_templates/{id}/` | Existing list summary; details add common metadata, run history, playbook, execution settings, survey/become/diff/simultaneous flags, and credential references. Launch reads validated related links and start capability; prompt settings and survey inputs are read separately by the launch form. | `host_config_key`, template `extra_vars`, webhook settings, and legacy runtime configuration stay out of resource details as secrets or unsupported configuration. |
 | `workflow_job_templates/{id}/` | Common metadata/run history, inventory, limit, branch/tags, survey and simultaneous-execution flags. | `extra_vars`, webhook data and launch-prompt flags have the same exclusions as job templates. |
 | `projects/`, `projects/{id}/` | Existing list summary; details add common metadata/run history, SCM type/repository/branch/revision/refspec/local path, clean/submodule/delete/update flags, cache timeout, branch override, timeout and default environment/credential references. | `last_updated` and `last_update_failed` are compatibility aliases for run history; legacy virtualenv and signature-validation configuration are outside supported operations. Repository URLs omit userinfo, query and fragment. |
 | `inventory_sources/{id}/` | Common metadata/run history, inventory/source-project references, source/path/branch/host filter, overwrite and update flags, cache timeout, verbosity/limit/timeout and credential references. | `source_vars`, enabled-variable values and custom runtime configuration are excluded; update history aliases duplicate run history. |
@@ -267,3 +267,60 @@ and redact the known token in all server text before presentation or caching.
 Each implementation milestone must pass formatting, package tests and vet before
 the next. Output/lifecycle changes also require race tests. Real server testing
 remains deferred, as agreed in PLAN.md.
+
+## Job-template launch and surveys
+
+Reviewed 2026-10-12 against AWX **24.6.1**, commit
+`94e5795dfc37b95c576d61f3e3b4e936c021548c`, using
+[JobTemplateLaunch and JobTemplateSurveySpec](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/api/views/__init__.py),
+[JobLaunchSerializer](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/api/serializers.py), and
+[SurveyJobTemplateMixin](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/main/models/mixins.py).
+This upstream evidence is an assumption for AAP 2.6. Fixtures are synthetic.
+Use the same relative routes under either configured controller prefix.
+
+Read `job_templates/{id}/` for identity, `related.launch`, optional
+`related.survey_spec`, and `summary_fields.user_capabilities.start`. Absent start
+permission is unknown; false is unavailable. A link alone does not authorize a
+launch. Validate related links against the exact resource route and origin.
+GET `job_templates/{id}/launch/` checks start access and reports
+`ask_variables_on_launch`, `survey_enabled`, `passwords_needed_to_start`,
+`inventory_needed_to_start`, `credential_needed_to_start`, and
+`variables_needed_to_start`. Other prompt settings keep template defaults;
+this form does not override inventory, credentials, execution settings, or
+credential passwords. Missing required inventory/credentials/passwords prevent
+launch with guidance to use the controller UI. GET requirements before preparing
+and again immediately before submission; permissions and survey definitions may
+change. Server rejection remains authoritative.
+
+For an enabled survey, GET `job_templates/{id}/survey_spec/`. Questions use
+`question_name`, `question_description`, `variable`, `type`, `required`, `default`,
+`min`, `max`, and `choices` (newline-separated string or list). Supported types
+are text, textarea, password, integer, float, multiplechoice, and multiselect.
+Text constraints count Unicode characters; numeric constraints bound the value.
+Multiselect values are lists. Password defaults are returned as `$encrypted$`;
+preserving that sentinel uses the controller's existing default rather than
+exposing it. Unknown types and malformed schemas block launch explicitly.
+
+POST launch once with a JSON object containing `extra_vars` as a mapping. The
+manual editor accepts one JSON/YAML mapping with string keys, JSON-compatible
+values, no duplicate keys, and no YAML aliases, merge keys, or custom tags.
+Survey variables belong to the survey controls; matching keys in manual input
+are rejected with a field-specific error. This client policy avoids silent
+collisions before combining the inputs into one runtime mapping. Unrestricted
+manual variables require `ask_variables_on_launch`; otherwise only validated
+survey values are sent. Optional blank numeric/choice/password answers are
+omitted; optional blank text/textarea is sent as an empty string only when its
+minimum length is zero, otherwise omitted. Required answers are validated.
+Controller precedence is template variables, then valid survey defaults, then
+runtime variables. Form values remain in memory only; password controls mask
+input, and errors never include values or raw server bodies.
+
+Success is HTTP 201 with positive `id`, `type` (`job` or `workflow_job` for sliced
+templates), matching `job`/`workflow_job` identity where present, and
+`ignored_fields`. Decode only the created identity and whether fields were ignored;
+never display ignored values. An ignored field warning accompanies navigation to
+the new execution. Missing/malformed identity, transport loss, cancellation, or
+server failures after POST have uncertain outcomes; never automatically retry.
+Retain form inputs after definite failures, disable resubmission after an
+uncertain outcome until the user closes the form and checks Jobs. Do not follow
+response Location headers or persist launch inputs.

@@ -70,6 +70,10 @@ func (c *Client) safeLink(link string) (*url.URL, error) {
 }
 func (c *Client) endpoint(route string) string { return c.prefix + route }
 func (c *Client) request(ctx context.Context, method, link, op string, target any) (resultErr error) {
+	return c.requestPayload(ctx, method, link, op, nil, target)
+}
+
+func (c *Client) requestPayload(ctx context.Context, method, link, op string, payload any, target any) (resultErr error) {
 	u, err := c.safeLink(link)
 	if err != nil {
 		return apiError(Malformed, op)
@@ -78,7 +82,14 @@ func (c *Client) request(ctx context.Context, method, link, op string, target an
 	defer cancel()
 	var body io.Reader
 	if method == http.MethodPost {
-		body = strings.NewReader("{}")
+		data := []byte("{}")
+		if payload != nil {
+			data, err = json.Marshal(payload)
+			if err != nil || len(data) > maxBody {
+				return apiError(Rejected, op)
+			}
+		}
+		body = strings.NewReader(string(data))
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {

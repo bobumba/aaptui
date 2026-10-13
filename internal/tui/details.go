@@ -129,6 +129,13 @@ func (m *Model) details(width int) []string {
 	case templateScreen:
 		d := m.templateDetail
 		fields.identity(d.Ref.ID, d.Name, string(d.Ref.Type), d.Description)
+		if d.Ref.Type == aap.PlaybookTemplate && m.launcher != nil {
+			state := d.Launch.State
+			if state == "" {
+				state = aap.Unknown
+			}
+			fields.field("Launch (L)", string(state)+" · "+d.Launch.Reason)
+		}
 		fields.field("Status", d.Status)
 		if d.Playbook != nil {
 			fields.field("Playbook", d.Playbook.Playbook)

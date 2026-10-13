@@ -58,9 +58,29 @@ Users can:
 - View job template details
 - View a paginated table of the selected template's jobs, newest first
 - Open a job from that table and return to the template's previous context
+- Launch a job with `L`, an enabled survey, and manually defined JSON/YAML `extra_vars`
 
-Launching jobs from templates remains deferred. Existing jobs can be relaunched
-from job details where supported by the API and permitted by the user's token.
+The focused launch form supports text, textarea, password, integer, float,
+multiplechoice, and multiselect survey questions, including defaults, required
+answers, and bounds. Tab and Shift-Tab move through survey fields, the multiline
+`extra_vars` editor, and Launch/Cancel controls. Enter edits multiline input or
+activates a focused control; it never submits from a survey or variables field.
+Mask password input and preserve controller password defaults without displaying
+their values. Ordinary text, including `q`, stays in the focused input.
+
+Manual variables accept one bounded JSON/YAML mapping. Reject duplicate keys and
+survey/manual collisions. Unrestricted manual variables require the template's
+Prompt on launch setting. Omit optional blank answers according to the reviewed
+contract. Recheck permissions and current requirements before launching; explain
+unsupported required inventory, credential, or credential-password inputs.
+Submission explicitly creates a new execution, sends at most one POST, and opens
+the new job (or sliced workflow job), preserving the template's previous context.
+Report ignored inputs, retain inputs after definite failures, and disable retries
+after uncertain outcomes until the user closes the form and checks Jobs. Form
+inputs remain in memory only. Dismissal before submission sends no mutation.
+
+Existing jobs can be relaunched from job details where supported by the API and
+permitted by the user's token. Workflow-template launching remains outside scope.
 
 ### Projects
 
@@ -140,7 +160,8 @@ arguments, or artifacts. Sanitize external text and redact the configured token.
 Job views place all displayed API-returned job fields under one Job details
 section. A separate Capabilities section identifies output (`o`), workflow children
 (`w`), cancellation (`c`), and relaunch (`R`), their availability, and any reasons.
-Preserve existing navigation and require the focused confirmation for mutations.
+Preserve existing navigation and require focused confirmation for cancellation
+and relaunch, or explicit submission of the focused template-launch form.
 
 All resource detail views use a consistent responsive table with aligned label
 and value columns. Field names are bold and use a theme-aware color distinct from

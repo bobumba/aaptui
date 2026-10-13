@@ -1,6 +1,6 @@
 # AAP TUI Implementation Plan
 
-Status: both milestones implemented and verified offline.
+Status: job-template launch milestone implemented and verified offline.
 Deployed AAP 2.6 validation remains unavailable.
 
 This plan refines `SPEC.md` and follows `AGENTS.md`. No application code is
@@ -21,9 +21,10 @@ when implementation is requested.
   List projects through `projects/` in the Projects menu, reusing the existing
   project summary and detail types. Retain type-aware detail readers for other
   template resources.
-- Support template listing, search/filtering, and details. Add relaunching of
-  existing jobs where supported by the API and the current token's permissions.
-  Launching from templates, approval/denial, and resource editing remain out of scope.
+- Support template listing, search/filtering, and details, and retain relaunching
+  of existing jobs where supported by the API and the current token's permissions.
+  Add job-template launching with survey inputs and manually entered `extra_vars`.
+  Workflow-template launching, approval/denial, and resource editing remain out of scope.
 - Allow cancellation only for supported active jobs and the current token's
   permissions, following an explicit confirmation in the TUI.
 - Keep output memory bounded. Fetch older output ranges on demand and use
@@ -143,6 +144,7 @@ errors with operation context and expose safe messages instead of raw bodies.
 | `JobRef`, `JobType`, `JobStatus` | Job identity, kind, and state |
 | `JobSummary`, `JobDetails` | Common fields and explicit optional type-specific details |
 | `JobCapabilities` | Output, cancellation, relaunch, and children: availability and reasons |
+| `LaunchRequirements`, `SurveyQuestion`, `LaunchResult` | Job-template launch preparation, survey controls, and mutation outcome |
 | `WorkflowNode` | Node state and optional child-job reference |
 | `ListOptions`, `Page[T]`, `PageCursor` | Search and pagination without HTTP details |
 | `OutputCursor`, `OutputChunk`, `OutputUpdate` | Output ranges, resume position, status, and follow errors |
@@ -150,9 +152,10 @@ errors with operation context and expose safe messages instead of raw bodies.
 | `APIError`, `ErrorKind` | Classified errors with safe presentation |
 
 Use small TUI consumer interfaces for template reading, job reading, workflow
-navigation, output reading/following, cancellation, and relaunching. Their methods accept
-contexts and use these types. Final signatures depend on the offline API contract
-review; avoid speculative abstractions and transport-specific UI interfaces.
+navigation, output reading/following, cancellation, relaunching, and job-template
+launch preparation/submission. Their methods accept contexts and use these types.
+Final signatures depend on the offline API contract review; avoid speculative
+abstractions and transport-specific UI interfaces.
 
 Capabilities distinguish unsupported operations, unavailable permissions, and
 unknown capability. Server responses remain authoritative when permissions or
@@ -217,85 +220,91 @@ ordinary characters; Esc first exits input mode. Provide visible contextual help
 manual refresh where useful, page navigation, and output follow controls. Bind
 server cancellation separately and require a prominent confirmation identifying
 the job. Expose relaunch as a distinct job action with its own confirmation.
+Job-template details expose `L` launch with capability state. The launch form
+uses Tab/Shift-Tab for survey fields, the JSON/YAML `extra_vars` editor, and
+explicit Launch/Cancel buttons; ordinary typing stays within the focused input.
 
 ## Milestones and acceptance tests
 
-### 1. Make job cancellation confirmation more visible
+### 1. Launch a job from a job template
 
-Replace the existing cancellation confirmation panel with a prominent modal popup
-or focused prompt so users clearly see and verify the action before cancelling a job.
-
-Acceptance criteria:
-
-- Show the selected job's name, ID, and type, a clear cancellation question,
-  and visible confirm/dismiss controls.
-- Keep the prompt readable in narrow terminals and visually distinct from job
-  details. Sanitize external text using existing rendering conventions.
-- While the prompt is open, direct keyboard input to the confirmation flow and
-  prevent background navigation or unrelated actions. Preserve existing confirm,
-  dismiss, and quit bindings.
-- Dismissing the prompt sends no cancellation request. Confirming sends at most
-  one request and visibly reports progress, success, or failure.
-- Preserve capability and permission checks, job-state reconciliation after an
-  ambiguous response, and protection against stale results.
-- Add TUI regression tests for prompt visibility, job identity, keyboard focus,
-  dismissal, duplicate confirmation, request failures, and narrow terminals.
-- Update contextual help and relevant user documentation.
-
-Implemented and verified offline: cancellation now uses a centered, bordered
-prompt with job identity and focused confirm/dismiss/quit controls. Narrow
-terminals use a compact prompt. Pending mutations block other actions and
-refresh, display progress, and report success or safe errors. Existing permission
-checks, reconciliation, and stale-result protection are preserved. Regression
-tests cover visibility, focus, dismissal, duplicate confirmation, failure,
-navigation, and terminal sizes. `go test ./...` and `go vet ./...` passed before
-starting milestone 2.
-
-### 2. Add an option to relaunch a job
-
-Add a distinct action in job details to relaunch the selected job where supported,
-using the server's relaunch operation and showing the newly created job.
+Add a launch action to job-template details. Open a focused launch form that
+accounts for the template's survey and always offers an `extra_vars` editor for
+manual variable definition. Use Tab to move between survey fields and the
+`extra_vars` editor before submitting the launch.
 
 Acceptance criteria:
 
-- Review and record the relaunch API contract in `docs/API_CONTRACT.md` before
-  implementation or fixture creation, including supported job types, capability
-  checks, required inputs, and response semantics for both connection modes.
-- Add relaunch capability and operations to the API layer using existing request
-  validation, authentication, safe errors, and context cancellation conventions.
-- Show the action, its shortcut, and availability in job details and contextual
-  help. Explain unsupported, permission-denied, or unknown capability states.
-- Require a prominent confirmation identifying the source job and explaining
-  that relaunch creates a new execution. Dismissal sends no mutation.
-- Handle required relaunch inputs according to the reviewed contract; explain
-  inputs the TUI cannot supply, and never persist or expose secrets.
-- Submit at most one request per confirmation, show progress and safe errors,
-  and open the returned job's details on success while preserving back navigation.
-- Do not automatically retry an ambiguous relaunch response, which could create
-  duplicate jobs. Explain the uncertain outcome and allow refreshing job lists.
-- Ignore stale results after navigation and preserve existing cancellation,
-  output, and workflow behavior.
-- Add API and TUI tests for supported and unsupported types, permissions,
-  required inputs, successful navigation, dismissal, duplicate submission,
-  malformed responses, failures, and stale results.
-- Update `SPEC.md`, `README.md`, and relevant API documentation during implementation.
+- Review and record the job-template launch and survey API contracts in
+  `docs/API_CONTRACT.md` before implementation or fixture creation. Cover launch
+  permissions, prompt settings, required inputs, enabled surveys, variable
+  acceptance/precedence, ignored fields, and response semantics for both
+  connection modes. Record the exact upstream revision used as supporting evidence.
+- Add API operations and focused resource types for reading launch requirements,
+  retrieving an enabled survey, and submitting a job-template launch. Follow
+  existing authentication, route validation, safe-error, and context conventions.
+- Show the launch action, its shortcut, and availability in job-template details
+  and contextual help. Explain unsupported, permission-denied, and unknown
+  capability states; preserve the existing template-jobs table and navigation.
+- When a survey is enabled, render its questions in order with labels,
+  descriptions, defaults, required/optional state, and controls appropriate to
+  the reviewed question types. Validate required answers, choices, numeric
+  bounds, and length constraints before submission. Explain unsupported question
+  types or required launch inputs the form cannot supply.
+- Always include a multiline `extra_vars` editor, including when the template has
+  no enabled survey. Allow manual variable definition and validate the supported
+  structured format as a variable mapping, with actionable input errors. Explain
+  when the controller's prompt settings restrict manually supplied variables.
+- Define and document how survey answers and manual `extra_vars` combine,
+  including duplicate variable names and omitted optional answers, according to
+  the reviewed controller contract. Surface conflicting or rejected inputs so
+  users understand which values will be submitted and accepted.
+- Tab cycles focus through every survey field, the `extra_vars` editor, and the
+  form's action controls; Shift-Tab moves backward. Show the focused control and
+  keep it visible when scrolling or resizing. Tab changes focus rather than
+  inserting indentation in the editor. Without a survey, retain the same focus
+  behavior for the editor and action controls.
+- Route ordinary typing to the focused input, including characters used by global
+  shortcuts. Keep multiline editing distinct from submission, provide explicit
+  launch/cancel controls, and support Esc to dismiss and Ctrl-C to quit. Dismissal
+  sends no launch request and restores the template's previous context.
+- Identify the template by name and ID and clearly indicate that submitting
+  creates a new execution. Mask survey password inputs, sanitize external display
+  text, and never persist form values or expose secrets in notices or errors.
+- Submit at most one launch request per submission, show progress and safe
+  failures, and prevent duplicate submission while pending. Keep correctable form
+  inputs available after validation or definite request failures.
+- Treat the server as authoritative if permissions or launch requirements change.
+  Report ignored/rejected inputs and do not silently claim they were applied.
+  Never automatically retry an ambiguous launch response; explain the uncertain
+  outcome and allow users to refresh job lists before trying again.
+- On success, open the returned job's details and preserve back navigation to the
+  source template. Follow the reviewed contract if launch returns a workflow job
+  for a sliced job template. Retain the created job's identity if detail loading
+  fails, and ignore stale asynchronous results after navigation.
+- Add API tests for both prefixes, permissions, launch requirements, survey
+  decoding, variable payloads, successful responses, ignored fields, malformed
+  responses, and definite/ambiguous failures. Add TUI tests for survey defaults
+  and validation, password masking, manual variables, variable collisions,
+  templates without surveys, Tab/Shift-Tab focus, multiline editing, dismissal,
+  duplicate submission, successful navigation, stale results, and narrow terminals.
+- Update `SPEC.md`, `README.md`, contextual help, and relevant API documentation
+  during implementation, including supported input formats, variable precedence,
+  launch restrictions, and the remaining deployed AAP 2.6 verification limitation.
 
-Implemented and verified offline: job details expose `R` relaunch, distinct from
-`r` refresh, with capability state and reasons. The reviewed contract supports
-playbook jobs, workflow jobs, and ad hoc commands. Jobs requiring credential
-passwords explain that the controller UI is required; unsupported types and
-unknown permissions remain unavailable for execution. Confirmation uses the
-focused prompt and explains that relaunch creates a new execution. The API
-rechecks permission and requirements and sends one POST, preserving original
-settings and limit. Success opens the new job, retaining its identity if detail
-loading fails and preserving the source in back navigation. Uncertain outcomes
-are never automatically retried. API and TUI regression/integration tests cover
-both prefixes, supported/unsupported types, inputs, permission changes, safe
-errors, navigation, duplicate submissions, malformed/ambiguous responses, stale
-results, and narrow terminals. README.md, SPEC.md, and docs/API_CONTRACT.md are
-synchronized. Modified Go files formatted; `go test ./...`, `go vet ./...`,
-`go test -race ./...`, and `git diff --check` passed. AAP 2.6 remains unverified
-against a deployed instance.
+Implemented and verified offline: job-template details expose `L` launch and
+start-capability reasons. The focused form reads current launch requirements and
+all seven reviewed survey question types, validates defaults/answers and bounds,
+masks passwords, and preserves saved password defaults. JSON/YAML manual input
+uses one bounded mapping with duplicate-key and survey-collision checks; numeric
+precision is preserved. Tab/Shift-Tab cycles fields, the multiline editor, and
+action buttons. Submission rechecks permissions/schema, sends one POST, reports
+ignored inputs, and opens the created playbook or sliced workflow job while
+preserving the source template. Definite failures retain inputs; ambiguous
+outcomes disable resubmission and require checking Jobs. Stale results are ignored.
+API, form, rendering, and integration tests cover both connection modes and the
+specified launch cases. User/specification/API documentation is synchronized.
+Deployed AAP 2.6 and interactive terminal validation remain unavailable.
 
 For each implementation milestone: format changed Go files with `gofmt -w`, run
 `go test ./...` and `go vet ./...`, review changes for unintended scope, and update

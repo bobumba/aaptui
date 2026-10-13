@@ -125,6 +125,9 @@ type Model struct {
 	detailTop, outputLeft        int
 	canceller                    Canceller
 	relauncher                   Relauncher
+	launcher                     Launcher
+	launch                       *launchForm
+	cleanLaunchText              func(string) string
 	confirmRelaunch              bool
 	confirming                   bool
 	confirmation                 aap.JobRef
@@ -332,6 +335,7 @@ func (m *Model) move(s screen) {
 	m.objectDetailsFocus = false
 }
 func (m *Model) invalidate() {
+	m.launch = nil
 	m.invalidateHostGroups()
 	if m.requestCancel != nil {
 		m.requestCancel()
@@ -371,6 +375,10 @@ func (m *Model) back() {
 }
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.PasteMsg:
+		if m.launch != nil {
+			m.pasteLaunch(msg.Content)
+		}
 	case hostGroupsMsg:
 		if msg.id != m.hostGroupsID || msg.hostID != m.hostDetail.ID || m.screen != hostScreen || m.quitting || m.ctx.Err() != nil {
 			return m, nil
@@ -453,6 +461,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.operation = ""
 		m.err = msg.err
+		if prepared, ok := msg.value.(launchPrepared); ok && m.launch != nil {
+			if msg.err == nil {
+				m.launch.setRequirements(prepared.requirements)
+			}
+			return m, nil
+		}
+		if launched, ok := msg.value.(launchSubmitted); ok && m.launch != nil {
+			m.launch.uncertain = launched.result.Ambiguous
+			if msg.err == nil && launched.result.Requested && launched.result.Job.Ref.ID > 0 {
+				m.launch = nil
+				m.move(jobScreen)
+				m.jobDetail = launched.result.Job
+				cmd := m.loadJob(launched.result.Job.Ref)
+				m.notice = fmt.Sprintf("Launched job %d; Esc returns to the template.", launched.result.Job.Ref.ID)
+				if launched.result.IgnoredFields {
+					m.notice = fmt.Sprintf("Warning: controller ignored launch inputs. Created job %d; Esc returns to the template.", launched.result.Job.Ref.ID)
+				}
+				return m, cmd
+			}
+			return m, nil
+		}
 		if result, ok := msg.value.(aap.CancellationResult); ok && result.Job.Ref.ID > 0 {
 			m.jobDetail = result.Job
 			if msg.err == nil && result.Requested {
@@ -537,6 +566,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.invalidate()
 			return m, tea.Quit
 		}
+		if m.launch != nil {
+			return m, m.updateLaunch(msg)
+		}
 		if m.confirming {
 			switch key {
 			case "y", "enter":
@@ -604,6 +636,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch key {
+		case "L":
+			if m.screen == templateScreen && m.templateDetail.Ref.Type == aap.PlaybookTemplate && !m.loading && m.launcher != nil && m.jobs != nil {
+				if m.templateDetail.Launch.State != aap.Available {
+					m.err = fmt.Errorf("launch: %s", m.templateDetail.Launch.Reason)
+					return m, nil
+				}
+				return m, m.prepareLaunch()
+			}
 		case "tab":
 			if m.screen == inventoryScreen || m.screen == groupScreen {
 				m.objectDetailsFocus = !m.objectDetailsFocus

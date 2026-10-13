@@ -3,7 +3,8 @@
 A keyboard-driven terminal client for Ansible Automation Platform 2.6. Browse
 job templates, projects, inventories, and recent jobs of all types, inspect details, navigate
 workflow children, scroll and follow output, and explicitly confirm supported
-job cancellation and relaunch.
+job cancellation and relaunch, or launch job templates with survey answers and
+manual variables.
 
 The header displays the effective AAP URL, the username resolved through `me/`,
 and the number of jobs with status `running` visible to the authenticated token
@@ -25,6 +26,46 @@ with ID, name, status, and start time (columns adapt to terminal width). Tab
 switches focus between details and the table; arrows scroll details or select
 a job. Enter opens job details and their existing output controls. Use `n`/`p`
 for pages and `r` to refresh the table; Esc restores the template and page.
+
+Press `L` in job-template details to open the launch form. Tab/Shift-Tab moves
+through survey fields, the multiline `extra_vars` editor, and Launch/Cancel
+buttons. Use arrows and Space/Enter for choice questions. Enter inserts a newline
+in textarea and `extra_vars` fields; launch only by activating the Launch button.
+Left/right, Home/End, Backspace/Delete, and up/down edit text; Ctrl-U clears the
+focused input. Pasting is supported. Esc dismisses; Ctrl-C quits. Characters such
+as `q` remain input while the form is open.
+
+Surveys support text, textarea, password, integer, float, multiplechoice, and
+multiselect questions, with defaults and required/length/numeric validation.
+Password fields are masked; a saved password default remains on the controller
+unless replaced. The manual editor accepts JSON or YAML, for example
+`{"release": "v2", "debug": false}` or:
+
+```yaml
+release: v2
+debug: false
+```
+
+Use Ctrl-U to replace the editor's initial `{}` with YAML. Input must be one
+mapping with string keys and JSON-compatible values. Duplicate keys, YAML
+aliases/merge keys/custom tags, and more than 64 KiB of launch input are rejected;
+quote dates to pass them as strings. Define survey variables in their survey
+controls; matching manual keys are rejected. Arbitrary manual variables require
+**Prompt on launch** for Extra Variables. Blank optional numeric/choice/password
+answers are omitted; blank optional text is submitted only when minimum length
+is zero. The controller applies template variables, then valid survey defaults,
+then submitted runtime values.
+
+Launching requires start permission and a valid exposed launch endpoint. Missing
+permission is shown as unknown. Templates requiring inventory, credentials, or
+credential passwords that the form cannot supply explain that the controller UI
+is required. Permissions and survey definitions are checked again before launch.
+Inputs remain in memory and are cleared when leaving the form. Success opens the
+created job (or a workflow job for sliced templates); Esc restores the template.
+The new identity remains available if details fail to load. Warnings report
+ignored inputs without displaying their values. Uncertain launch outcomes disable
+resubmission; close the form and refresh Jobs before trying again. Leaving during
+submission cancels the local request but might still create a server job.
 
 The main menu contains Job Templates, Jobs, Projects, and Inventories. Inventories
 lists the `inventories/` collection with search, refresh, and pagination.
@@ -152,12 +193,13 @@ full details and messages.
 
 | Screen | Keys |
 | --- | --- |
-| Everywhere | Ctrl-C quits; `q` quits outside search; Esc returns |
+| Everywhere | Ctrl-C quits; `q` quits outside text input; Esc returns |
 | Main/lists | arrows or `j`/`k` select; Enter opens |
 | Template/project/job/inventory/group/host lists | `/` enters search; Enter applies server-side search; Esc exits input; `n`/`p` next/previous page; `r` refreshes |
 | Inventory/group details and menus | Tab switches menu/details focus; arrows or `j`/`k` select/scroll; Enter opens the selected menu item; `r` refreshes details; Esc returns |
 | Host lists/details | Enter opens details; arrows or `j`/`k` scroll details; `n`/`p` page direct/inherited groups; `r` refreshes details and memberships; Esc restores the list |
-| Template details with jobs | Tab switches details/jobs focus; arrows or `j`/`k` scroll/select; Enter opens a job; `n`/`p` page; `r` refreshes jobs; Esc returns |
+| Template details with jobs | `L` opens launch; Tab switches details/jobs focus; arrows or `j`/`k` scroll/select; Enter opens a job; `n`/`p` page; `r` refreshes jobs; Esc returns |
+| Job-template launch | Tab/Shift-Tab changes field/button; Enter edits multiline input or activates a button; arrows/Space select choices; Ctrl-U clears input; Esc dismisses; Ctrl-C quits |
 | Project details | arrows or `j`/`k` scroll wrapped details; Esc returns |
 | Job details | `o` output; `w` workflow children; `c` cancellation dialog; `R` relaunch dialog; `r` refresh; arrows or `j`/`k` scroll |
 | Workflow children | `d` opens node details; Enter opens a launched child; `n`/`p` page; `r` refresh |
@@ -173,7 +215,8 @@ workflows retain back-navigation state. Inaccessible and deleted resources displ
 Unknown job/template types retain common information; unsupported capabilities
 remain explicitly unknown or unavailable. Approval/denial is outside scope.
 
-Only confirmed cancellation or relaunch performs a server mutation. State and token
+Only confirmed cancellation/relaunch or explicit launch-form submission performs
+a server mutation. State and token
 permissions are rechecked immediately beforehand. An ambiguous cancellation
 response triggers a status read, never an automatic repeat of the POST.
 While cancellation is pending, other job actions and refresh are blocked;
@@ -245,13 +288,16 @@ storage, older-history reload, retries, delayed final output, cleanup, and
 confirmation/status reconciliation. Integration tests drive the TUI against
 synthetic HTTPS APIs for both modes, including inventory/group traversal, host
 pagination, identity/count header initialization, template-job paging, and
-restoration of selection and search after returning. Header polling tests use
+survey/manual-variable launch with restoration of the source template. Launch
+tests cover variable validation/precision, password defaults/redaction, keyboard
+focus, duplicate submission, changed requirements, ignored inputs, uncertain
+outcomes, stale responses, and narrow terminals. Header polling tests use
 deterministic timing to verify backoff and cancellation. Terminal interaction still needs manual
 validation in the user's terminal. A Linux pseudo-terminal regression emulates
 older `TERM=screen` sessions at 237 columns by 62 rows, checks the initial list
 columns, and selects and opens the last template. Deployed AAP 2.6 validation
 remains deferred.
 
-Launching from templates, editing, approval/denial, and WebSocket transport are not
-implemented. Server cancellation/relaunch permissions and capability responses remain
+Workflow-template launching, editing, approval/denial, and WebSocket transport are
+not implemented. Server launch/cancellation/relaunch permissions and capability responses remain
 authoritative. See [PLAN.md](PLAN.md) and [SPEC.md](SPEC.md) for scope.

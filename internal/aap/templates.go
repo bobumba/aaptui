@@ -45,6 +45,9 @@ type InventorySettings struct {
 }
 type TemplateDetails struct {
 	TemplateSummary
+	Launch                 Capability
+	launch, survey         string
+	startPermission        *bool
 	Metadata               ResourceMetadata
 	Options                ExecutionSettings
 	LastJobRun, NextJobRun string
@@ -57,22 +60,23 @@ type TemplateDetails struct {
 }
 type wireResource struct {
 	wireDetails
-	ID          int    `json:"id"`
-	Type        string `json:"type"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	Playbook    string `json:"playbook"`
-	JobType     string `json:"job_type"`
-	Limit       string `json:"limit"`
-	Inventory   *int   `json:"inventory"`
-	Project     *int   `json:"project"`
-	SCMType     string `json:"scm_type"`
-	SCMURL      string `json:"scm_url"`
-	SCMBranch   string `json:"scm_branch"`
-	Source      string `json:"source"`
-	SourcePath  string `json:"source_path"`
-	Timeout     *int   `json:"timeout"`
+	Related     map[string]string `json:"related"`
+	ID          int               `json:"id"`
+	Type        string            `json:"type"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Status      string            `json:"status"`
+	Playbook    string            `json:"playbook"`
+	JobType     string            `json:"job_type"`
+	Limit       string            `json:"limit"`
+	Inventory   *int              `json:"inventory"`
+	Project     *int              `json:"project"`
+	SCMType     string            `json:"scm_type"`
+	SCMURL      string            `json:"scm_url"`
+	SCMBranch   string            `json:"scm_branch"`
+	Source      string            `json:"source"`
+	SourcePath  string            `json:"source_path"`
+	Timeout     *int              `json:"timeout"`
 }
 
 func (c *Client) templateSummary(w wireResource) TemplateSummary {
@@ -132,6 +136,29 @@ func (c *Client) Template(ctx context.Context, ref TemplateRef) (TemplateDetails
 	}
 	d := TemplateDetails{TemplateSummary: c.templateSummary(w), Metadata: c.metadata(w.wireDetails), Options: c.executionSettings(w),
 		LastJobRun: c.cleanLabel(w.LastJobRun), NextJobRun: c.cleanLabel(w.NextJobRun), LastJobFailed: w.LastJobFailed}
+	d.Launch = Capability{Unavailable, "Launch is not supported for this template type"}
+	if ref.Type == PlaybookTemplate {
+		d.startPermission = w.Summary.UserCapabilities.Start
+		d.launch, d.survey = w.Related["launch"], w.Related["survey_spec"]
+		for _, item := range []struct{ link, suffix string }{{d.launch, "launch/"}, {d.survey, "survey_spec/"}} {
+			if item.link != "" {
+				u, err := c.safeLink(item.link)
+				if err != nil || u.Path != c.endpoint(fmt.Sprintf("job_templates/%d/%s", ref.ID, item.suffix)) || u.RawQuery != "" || u.ForceQuery {
+					return TemplateDetails{}, apiError(Malformed, "read template launch link")
+				}
+			}
+		}
+		switch {
+		case d.launch == "":
+			d.Launch = Capability{Unavailable, "Launch is not exposed"}
+		case w.Summary.UserCapabilities.Start == nil:
+			d.Launch = Capability{Unknown, "Launch permission was not returned"}
+		case !*w.Summary.UserCapabilities.Start:
+			d.Launch = Capability{Unavailable, "Token does not have permission to launch this template"}
+		default:
+			d.Launch = Capability{Available, ""}
+		}
+	}
 	switch ref.Type {
 	case PlaybookTemplate:
 		d.Playbook = &PlaybookSettings{c.CleanText(w.Playbook), c.CleanText(w.JobType), c.CleanText(w.Limit), w.Inventory, w.Project}

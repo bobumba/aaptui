@@ -37,6 +37,9 @@ func (m *Model) View() tea.View {
 }
 
 func (m *Model) body(width, height int) []string {
+	if m.launch != nil {
+		return m.launchBody(width, height)
+	}
 	var lines []string
 	rows := min(aap.OutputLines, height)
 	start := max(0, m.selected-rows+1)

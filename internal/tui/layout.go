@@ -65,6 +65,9 @@ func (m *Model) header(width int) []string {
 	if m.screen == templateScreen && m.templateDetail.Ref.Type == aap.ProjectTemplate {
 		title = "Project details"
 	}
+	if m.launch != nil {
+		title = fmt.Sprintf("Launch template %d · %s", m.templateDetail.Ref.ID, m.launchText(singleLine(m.templateDetail.Name)))
+	}
 	title = m.styles.title.Render("AAP TUI · " + title)
 	if m.loading {
 		message := "Loading…"
@@ -257,6 +260,9 @@ func (m *Model) messagePanel(text string, width, limit int) []string {
 }
 
 func (m *Model) screenHelp(width int) []string {
+	if m.launch != nil {
+		return clipLines([]string{m.helpLine("Tab/Shift-Tab focus · Enter edit/activate"), m.helpLine("↑/↓ choose · Space toggle · Esc dismiss · Ctrl-C quit")}, width)
+	}
 	var lines []string
 	back := "Esc back · q quit · Ctrl-C quit"
 	switch m.screen {
@@ -308,6 +314,9 @@ func (m *Model) screenHelp(width int) []string {
 		if width < 60 {
 			lines = []string{"Tab details/jobs · ↑/↓ move", "Enter job · r refresh · n/p page", back}
 		}
+	}
+	if m.screen == templateScreen && m.templateDetail.Ref.Type == aap.PlaybookTemplate && m.launcher != nil {
+		lines[0] = "L launch job · " + lines[0]
 	}
 	for i, line := range lines {
 		lines[i] = m.helpLine(line)
