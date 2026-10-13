@@ -2,6 +2,7 @@ package aap
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -76,6 +77,7 @@ type JobDetails struct {
 	Playbook                                                                  *PlaybookSettings
 	Project                                                                   *ProjectSettings
 	Inventory                                                                 *InventorySettings
+	ExtraVars                                                                 *JobVariables
 	ModuleName, ModuleArgs, SystemJobType, Explanation                        string
 	ApprovalTimeout                                                           *int
 	TimedOut                                                                  *bool
@@ -84,18 +86,19 @@ type JobDetails struct {
 	startPermission                                                           *bool
 }
 type wireJob struct {
-	UnifiedJobTemplate *int    `json:"unified_job_template"`
-	LaunchType         string  `json:"launch_type"`
-	ExecutionNode      string  `json:"execution_node"`
-	ControllerNode     string  `json:"controller_node"`
-	CanceledOn         string  `json:"canceled_on"`
-	ApprovalExpiration string  `json:"approval_expiration"`
-	Failed             *bool   `json:"failed"`
-	LicenseError       *bool   `json:"license_error"`
-	OrgHostLimitError  *bool   `json:"org_host_limit_error"`
-	JobSliceNumber     *int    `json:"job_slice_number"`
-	JobTemplate        *int    `json:"job_template"`
-	ResultStdout       *string `json:"result_stdout"`
+	ExtraVars          json.RawMessage `json:"extra_vars"`
+	UnifiedJobTemplate *int            `json:"unified_job_template"`
+	LaunchType         string          `json:"launch_type"`
+	ExecutionNode      string          `json:"execution_node"`
+	ControllerNode     string          `json:"controller_node"`
+	CanceledOn         string          `json:"canceled_on"`
+	ApprovalExpiration string          `json:"approval_expiration"`
+	Failed             *bool           `json:"failed"`
+	LicenseError       *bool           `json:"license_error"`
+	OrgHostLimitError  *bool           `json:"org_host_limit_error"`
+	JobSliceNumber     *int            `json:"job_slice_number"`
+	JobTemplate        *int            `json:"job_template"`
+	ResultStdout       *string         `json:"result_stdout"`
 	wireResource
 	Started                 string            `json:"started"`
 	Finished                string            `json:"finished"`
@@ -163,6 +166,7 @@ func (c *Client) Job(ctx context.Context, ref JobRef) (JobDetails, error) {
 		LaunchType: c.cleanLabel(w.LaunchType), ExecutionNode: c.cleanLabel(w.ExecutionNode), ControllerNode: c.cleanLabel(w.ControllerNode),
 		CanceledOn: c.cleanLabel(w.CanceledOn), ApprovalExpiration: c.cleanLabel(w.ApprovalExpiration),
 		Failed: w.Failed, LicenseError: w.LicenseError, OrgHostLimitError: w.OrgHostLimitError, JobSliceNumber: w.JobSliceNumber}
+	d.ExtraVars = c.jobVariables(d.Ref.Type, w.ExtraVars)
 	unknown := Capability{Unknown, "Capability not exposed by this resource"}
 	d.Capabilities = JobCapabilities{Output: unknown, Cancel: unknown, Children: unknown, Relaunch: unknown}
 	d.stdout = w.Related["stdout"]

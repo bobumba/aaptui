@@ -1,7 +1,7 @@
 # AAP TUI Implementation Plan
 
-Status: all milestones, including launch prompt presentation, are implemented
-and verified offline. Deployed AAP 2.6 validation remains unavailable.
+Status: all milestones, including job-details survey/extra-vars display, are
+implemented and verified offline. Deployed AAP 2.6 validation remains unavailable.
 
 This plan refines `SPEC.md` and follows `AGENTS.md`. No application code is
 authorized by the design discussion alone. Implement one milestone at a time
@@ -226,53 +226,50 @@ explicit Launch/Cancel buttons; ordinary typing stays within the focused input.
 
 ## Milestones and acceptance tests
 
-### 1. Improve job launch prompts
+### 1. Display survey answers and extra variables in job details
 
-Replace the rudimentary job launch form presentation with a focused, bordered
-prompt styled consistently with the existing job cancel/relaunch confirmation
-prompts. Give each survey field and the manual `extra_vars` editor its own
-distinctive box so inputs and focus are easy to identify.
+Add a Survey / Extra variables section to job details so users can inspect the
+variables recorded for an execution, including survey answers returned in the
+job's `extra_vars`. Use the job's recorded values rather than current template
+defaults or survey definitions, which may have changed since launch.
 
 Acceptance criteria:
 
-- Present the launch form in a centered, rounded-border panel where terminal
-  dimensions permit, following the cancel/relaunch prompts' spacing and styling
-  conventions. Keep the template name and ID, the new-execution notice, and
-  explicit Launch/Cancel controls clear.
-- Render every survey control in a separate bordered box, including text,
-  password, numeric, choice, multiselect, and multiline inputs. Give the manual
-  JSON/YAML `extra_vars` editor its own bordered box. Keep labels, descriptions,
-  required/optional indicators, choices, and validation feedback visibly
-  associated with their fields.
-- Distinguish the focused field or action with the existing theme's styles and
-  a visible non-color cue. Keep boxes and focus legible in light and dark themes.
-- Preserve Tab/Shift-Tab navigation, ordinary typing within the focused control,
-  multiline editing, password masking, variable validation, and explicit
-  submission. Esc dismisses without launching; Ctrl-C quits.
-- Account for borders and padding when sizing and scrolling the form. Keep the
-  focused input and cursor visible as focus moves or the terminal resizes.
-  On narrow or short terminals, simplify decoration while keeping inputs,
-  actions, and contextual help usable without overflowing the frame.
-- Show loading, submission, validation, and safe failure states within the prompt.
-  Preserve existing launch permissions, variable handling, duplicate-submission
-  prevention, ambiguous-outcome handling, and successful/back navigation.
-- Add focused TUI regression tests for the bordered panel and field boxes,
-  focus visibility, scrolling/resizing, narrow and short terminals, templates
-  with and without surveys, and retained editing/dismissal/submission behavior.
-  Use existing launch tests and fake readers; no API contract changes are planned.
-- Update relevant user documentation and contextual help to reflect the prompt
-  presentation and any layout-specific navigation guidance.
+- Read the recorded `extra_vars` from supported job detail responses and expose
+  them through the existing API types. Review and document the relevant API
+  contract before changing decoding; preserve details for job types without
+  variables.
+- Display survey answers and other extra variables in a clearly labeled section
+  within job details. Do not claim to distinguish their origins unless the API
+  supplies reliable execution-specific metadata.
+- Present variable names and values readably, including nested objects, lists,
+  booleans, numbers, and multiline strings. Use stable ordering and the existing
+  detail view's scrolling, wrapping, and responsive layout.
+- Distinguish empty variables from unavailable or unsupported data. Handle
+  malformed variable data with a safe, visible message while retaining the
+  rest of the job details.
+- Preserve server-provided password masking and existing token redaction and
+  terminal-control sanitization. Keep decoding and rendering bounded, and do
+  not persist variable values or include them in diagnostic errors.
+- Add API and TUI tests for recorded survey answers and extra variables, nested
+  and multiline values, empty/missing/malformed data, masked passwords, token
+  redaction, terminal controls, and scrolling/resizing on small terminals.
+- Update `SPEC.md`, `docs/API_CONTRACT.md`, and relevant user documentation to
+  describe this section and revise the existing exclusion of job `extra_vars`.
+  Preserve unrelated exclusions for credentials and other resource variables.
 
-Implemented and verified offline: launch uses a centered rounded-border dialog,
-separate survey/variables boxes, double borders and text markers for focus,
-field-specific validation feedback, and visible action controls. Scrolling and
-resizing keep the focused field and cursor visible; small terminals reduce
-decoration and prioritize editing and dismissal. Existing launch behavior is
-preserved. TUI regression tests cover all survey control types, templates without
-surveys, both themes, focus and resizing, progress/errors, and ambiguous outcomes.
-`go test ./...` and `go vet ./...` pass. README, specification, and contextual help
-are synchronized. Deployed AAP 2.6 and interactive terminal validation remain
-unavailable.
+Implemented and verified offline: job details include a Survey / Extra variables
+section for playbook jobs, workflow jobs, ad hoc commands, and system jobs. The
+API decodes recorded mappings without consulting current templates/surveys,
+preserves numeric precision and password masks, sanitizes/redacts recursively,
+and applies separate 64 KiB input/display budgets. Sorted names, nested JSON,
+and multiline answers use the existing responsive detail table. Empty, missing,
+unsupported, malformed, and oversized data have explicit states without hiding
+other fields. API and TUI tests cover both connection modes, masks/redaction,
+parser/display limits, refresh, both themes, wrapping, scrolling, and resizing.
+`go test ./...` and `go vet ./...` pass; README, specification, and the pinned API
+contract review are synchronized. Deployed AAP 2.6 and manual interactive-terminal
+validation remain unavailable.
 
 For each implementation milestone: format changed Go files with `gofmt -w`, run
 `go test ./...` and `go vet ./...`, review changes for unintended scope, and update

@@ -52,8 +52,8 @@ type wireSummary struct {
 	InventorySource     *wireReference  `json:"inventory_source"`
 }
 
-// wireDetails contains only selected fields. Arbitrary variables, environments,
-// artifacts, credentials and launch secrets are deliberately not decoded.
+// wireDetails contains only selected fields. Job variables are decoded separately;
+// environments, artifacts, credential contents and launch secrets are excluded.
 type wireDetails struct {
 	Credential            *int        `json:"credential"`
 	DefaultEnvironment    *int        `json:"default_environment"`

@@ -259,6 +259,19 @@ func (m *Model) details(width int) []string {
 		}
 		fields.flag("Approval timed out", d.TimedOut)
 		fields.flag("Event processing finished", d.EventProcessingFinished)
+		fields.section("Survey / Extra variables")
+		switch {
+		case d.ExtraVars == nil:
+			fields.field("Variables", "Not supported for this job type")
+		case d.ExtraVars.UnavailableReason != "":
+			fields.field("Variables", "Unavailable · "+d.ExtraVars.UnavailableReason)
+		case len(d.ExtraVars.Values) == 0:
+			fields.field("Variables", "No recorded variables")
+		default:
+			for _, variable := range d.ExtraVars.Values {
+				fields.field(variable.Name, variable.Value)
+			}
+		}
 	}
 	if m.screen == jobScreen {
 		fields = append(m.capabilityFields(), fields...)

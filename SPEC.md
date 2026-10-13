@@ -163,11 +163,21 @@ endpoint-by-endpoint API review. Include available timestamps, ownership and
 related resource names/IDs, execution settings, SCM revisions and update settings,
 inventory counts and failure flags, host state, and status explanations. Preserve
 false/zero values and handle absent fields without inventing data. Do not display
-credential contents or arbitrary secret-bearing variables, environments, module
+credential contents, variables from other resource types, environments, module
 arguments, or artifacts. Sanitize external text and redact the configured token.
 
-Job views place all displayed API-returned job fields under one Job details
-section. A separate Capabilities section identifies output (`o`), workflow children
+Job views place common and type-specific fields under Job details. A separate
+Survey / Extra variables section displays recorded `extra_vars` for playbook
+jobs, workflow jobs, ad hoc commands, and system jobs, including survey answers.
+Use execution values rather than current template defaults or survey definitions;
+do not infer variable origins. Show sorted names and readable values, preserving
+nested structures, number precision, false/zero/null, blank strings, and multiline
+answers. Preserve server password masks and sanitize/redact recursively before
+display. Keep values in memory only, with 64 KiB decoded-input and display budgets
+and at most 64 nesting levels. Distinguish empty, unavailable, malformed,
+oversized, and unsupported data without hiding other job fields.
+
+A separate Capabilities section identifies output (`o`), workflow children
 (`w`), cancellation (`c`), and relaunch (`R`), their availability, and any reasons.
 Preserve existing navigation and require focused confirmation for cancellation
 and relaunch, or explicit submission of the focused template-launch form.

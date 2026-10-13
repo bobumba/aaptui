@@ -19,6 +19,37 @@ Upstream behavior below is an assumption for AAP 2.6, not product evidence.
 
 ## Resources
 
+### Recorded job variables
+
+Reviewed 2026-10-12 against AWX 24.6.1 commit
+`94e5795dfc37b95c576d61f3e3b4e936c021548c`,
+[serializers.py](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/api/serializers.py)
+and [mixins.py](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/main/models/mixins.py).
+`JobSerializer`, `WorkflowJobSerializer`, `AdHocCommandSerializer`, and
+`SystemJobSerializer` expose recorded `extra_vars` on their detail endpoints.
+Playbook/workflow serializers call `display_extra_vars()`; `SurveyJobMixin`
+replaces recorded survey-password values with their saved masks before returning
+the JSON mapping as a string. Other job types have no reviewed variables contract.
+These serializer behaviors remain upstream assumptions for AAP 2.6.
+
+Red Hat's AAP 2.6 [extra variables documentation](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/develop-ref_controller_job_template_variables)
+confirms that survey answers become `extra_vars`. Display the recorded mapping
+together; the detail response does not reliably identify which values came from
+survey answers, template defaults, or manual overrides. Do not fetch current
+template/survey definitions to infer historical origins or recover passwords.
+
+Accept a JSON/YAML mapping string, or an object as a defensive compatibility
+allowance. Empty strings/mappings mean no recorded variables; omitted/null data
+is unavailable. Invalid mappings leave other job details readable and produce a
+fixed safe message. Reuse launch mapping validation (including duplicate-key,
+alias/tag and nesting checks), with a 64 KiB decoded-input budget and a separate
+64 KiB display budget. Values are sorted by original variable name, sanitized
+recursively, and token-redacted before exposure to the TUI. Preserve server masks;
+do not persist values or include them in errors. Synthetic tests exercise both
+API prefixes; no deployed AAP validation is available.
+
+### Collections
+
 Header and template-job contracts reviewed 2026-10-12 against the same AWX
 24.6.1 commit `94e5795dfc37b95c576d61f3e3b4e936c021548c`.
 `UserMeList` returns a paginated collection containing the requesting user;
@@ -138,12 +169,12 @@ show a placeholder; invalid times show `Unavailable`. Displayed times use UTC.
 | Endpoint(s), relative to configured prefix | Pertinent returned fields selected | Returned fields omitted and reason |
 | --- | --- | --- |
 | `unified_jobs/`, `job_templates/{id}/jobs/` | Existing ID/name/type/status; main Jobs list also displays `started` and `finished`. Details come from the type-specific endpoint below. | Other detail fields stay out of the list to keep search and pagination readable. |
-| `jobs/{id}/` | Common metadata and execution fields; `playbook`, `scm_revision`, `job_slice_number`, and common job state below. | `extra_vars`, `artifacts`, `passwords_needed_to_start`, webhook identifiers/credentials and launch internals can contain sensitive data or describe unsupported launch/edit operations. |
-| `workflow_jobs/{id}/` | Common metadata and job state; available inventory, limit, branch, tags, and simultaneous-execution settings. | `extra_vars` and webhook data are excluded; workflow children retain separate navigation. `is_sliced_job` duplicates the slice/ancestor context already available. |
+| `jobs/{id}/` | Common metadata and execution fields; `playbook`, `scm_revision`, `job_slice_number`, recorded `extra_vars`, and common job state below. | `artifacts`, `passwords_needed_to_start`, webhook identifiers/credentials and launch internals can contain sensitive data or describe unsupported launch/edit operations. |
+| `workflow_jobs/{id}/` | Common metadata and job state; available inventory, limit, branch, tags, simultaneous-execution settings, and recorded `extra_vars`. | Webhook data are excluded; workflow children retain separate navigation. `is_sliced_job` duplicates the slice/ancestor context already available. |
 | `project_updates/{id}/` | Common job state, project reference, job type/tags, SCM type, repository location, branch, revision, refspec, local path, clean/submodule/delete flags, and timeout. | Raw credential contents and custom runtime paths/settings do not aid supported browsing operations. |
 | `inventory_updates/{id}/` | Common job state, inventory/source references, source/path/branch/revision, host filter, overwrite flags, verbosity/limit/timeout, `license_error`, and `org_host_limit_error`. | `source_vars`, enabled-variable values, custom runtime configuration, and intermediate update/placement references are excluded as sensitive configuration or low-value implementation detail. |
-| `ad_hoc_commands/{id}/` | Common job state, `module_name`, inventory/credential references, job type, limit, forks, verbosity, become and diff flags. | `module_args` and `extra_vars` may contain secrets; module arguments are no longer rendered. |
-| `system_jobs/{id}/` | Common job state and `job_type`; existing bounded stdout handling remains separate. | `extra_vars` are arbitrary secret-bearing configuration; `result_stdout` belongs in the output view rather than details. |
+| `ad_hoc_commands/{id}/` | Common job state, `module_name`, inventory/credential references, job type, limit, forks, verbosity, become/diff flags, and recorded `extra_vars`. | `module_args` may contain secrets and are not rendered. |
+| `system_jobs/{id}/` | Common job state, `job_type`, and recorded `extra_vars`; existing bounded stdout handling remains separate. | `result_stdout` belongs in the output view rather than details. |
 | `workflow_approvals/{id}/` | Common job state, available timeout, `approval_expiration`, and `timed_out`. | `can_approve_or_deny` describes approval mutations outside scope. |
 | `unified_jobs/{id}/` (unknown types) | Common metadata, launch/status/failure/timing fields, returned execution settings, template/ancestor/workflow references, and explicit capability state. | Unknown type-specific payloads are not dumped as arbitrary JSON. |
 | `job_templates/`, `job_templates/{id}/` | Existing list summary; details add common metadata, run history, playbook, execution settings, survey/become/diff/simultaneous flags, and credential references. Launch reads validated related links and start capability; prompt settings and survey inputs are read separately by the launch form. | `host_config_key`, template `extra_vars`, webhook settings, and legacy runtime configuration stay out of resource details as secrets or unsupported configuration. |
@@ -170,8 +201,10 @@ internals; owner/template/workflow references supply the relevant context.
 All object endpoints also return `url`, `related`, and `summary_fields` as
 applicable. Only selected summary fields are decoded for display; validated
 related output/cancel/children links retain their existing behavior. Raw payloads,
-credential inputs, role maps, and launch secrets are never rendered as object
-details. Output and cancellation endpoints retain their existing reviewed
+credential inputs, role maps, and launch-password inputs are never rendered as
+object details. Recorded job `extra_vars` are the explicit exception for variable
+data, with server masks and local redaction retained as described above.
+Output and cancellation endpoints retain their existing reviewed
 contracts below and are not expanded into object-field views.
 
 Inventory and group detail reads run asynchronously when entering their screens,

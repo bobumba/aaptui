@@ -98,11 +98,24 @@ label/value tables with bold, theme-aware colored labels. Wide terminals show
 two field/value pairs per row; narrower terminals use one pair per row, with a
 stacked layout at very small widths. Descriptions and multiline values span the
 full table width. Long labels and values wrap, and all detail rows can be scrolled.
-Job views separate **Capabilities** from **Job details**. Capabilities list output
+Job views show **Capabilities**, **Job details**, and **Survey / Extra variables**.
+Capabilities list output
 (`o`), workflow children (`w`), cancellation (`c`), and relaunch (`R`) with their
-availability and reasons. All displayed API-returned job information, including execution settings,
-appears under Job details. Cancellation still requires confirmation.
-Credential references show only IDs/names; credential contents, arbitrary
+availability and reasons. Execution settings and other job fields appear under
+Job details. Cancellation still requires confirmation.
+
+Survey / Extra variables shows the values recorded for playbook jobs, workflow
+jobs, ad hoc commands, and system jobs. Survey answers and other variables appear
+together, sorted by variable name; current template/survey definitions are not
+used to infer their origins. Nested values use formatted JSON, and multiline
+answers preserve line breaks. Empty strings show `""`; false, zero, and null remain
+visible. Use arrows or `j`/`k` to scroll the section. Empty, unavailable, malformed,
+oversized, and unsupported data have distinct messages; other job fields remain
+readable. Server password masks are retained and the configured token is redacted
+from names and values. Variable data stays in memory, with 64 KiB decoded-input
+and display limits and at most 64 nesting levels.
+
+Credential references show only IDs/names; credential contents, other resource
 variables, module arguments, job environments, and artifacts are not displayed.
 SCM URLs omit embedded credentials, query parameters, and fragments.
 
