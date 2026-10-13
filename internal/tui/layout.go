@@ -67,7 +67,11 @@ func (m *Model) header(width int) []string {
 	}
 	title = m.styles.title.Render("AAP TUI · " + title)
 	if m.loading {
-		title += m.styles.warning.Render(" · Loading…")
+		message := "Loading…"
+		if m.operation != "" {
+			message = m.operation
+		}
+		title += m.styles.warning.Render(" · " + message)
 	}
 	lines := append([]string{title}, m.connectionHeader()...)
 	lines = append(lines, m.styles.muted.Render(strings.Repeat("─", width)))
@@ -148,6 +152,9 @@ func (m *Model) footer(width int) []string {
 	if len(help) > budget {
 		help = help[len(help)-budget:]
 	}
+	if m.notice != "" && m.height > len(help)+4 {
+		help = append([]string{m.styles.success.Render(m.notice)}, help...)
+	}
 	if m.err == nil {
 		return clipLines(help, width)
 	}
@@ -178,18 +185,59 @@ func tailCells(value string, width int) string {
 	}
 }
 
-func (m *Model) confirmationFooter(width int) []string {
-	prompt := fmt.Sprintf("Cancel job %d (%s)?", m.confirmation.ID, m.confirmation.Type)
-	help := "y/Enter confirm · n/Esc dismiss"
-	limit := max(1, m.height-5)
-	if m.height < 8 {
-		help = "y yes · n no"
-		limit = 1
-	} else {
-		prompt += "\n" + singleLine(m.jobDetail.Name)
+// confirmationView gives the prompt the entire frame and keyboard focus. A
+// centered border is used where it fits; short terminals keep the action and
+// controls visible before spending rows on the job name or decoration.
+func (m *Model) confirmationView() string {
+	width := min(64, m.width)
+	border := width >= 24 && m.height >= 8
+	inner := width
+	if border {
+		inner -= 4
 	}
-	panel := m.messagePanel(prompt, width, min(4, limit))
-	return clipLines(append(panel, m.helpLine(help)), width)
+	prompt := fmt.Sprintf("Cancel job %d (%s)?", m.confirmation.ID, m.confirmation.Type)
+	if m.confirmRelaunch {
+		prompt = fmt.Sprintf("Relaunch job %d (%s)?", m.confirmation.ID, m.confirmation.Type)
+	}
+	controls := []string{"y/Enter confirm", "n/Esc dismiss", "q / Ctrl-C quit"}
+	lines := strings.Split(ansi.Hardwrap(prompt, inner, true), "\n")
+	lines = append(lines, ansi.Truncate(singleLine(m.jobDetail.Name), inner, "…"))
+	if m.confirmRelaunch {
+		lines = append(lines, strings.Split(ansi.Hardwrap("Creates a new execution.", inner, true), "\n")...)
+	}
+	for _, control := range controls {
+		lines = append(lines, ansi.Truncate(control, inner, ""))
+	}
+	budget := m.height
+	if border {
+		budget -= 2
+	}
+	if len(lines) > budget {
+		if m.confirmRelaunch && budget >= 6 {
+			lines = clipLines([]string{ansi.Truncate(prompt, inner, ""), ansi.Truncate(singleLine(m.jobDetail.Name), inner, "…"), "Creates a new execution", controls[0], controls[1], controls[2]}, inner)
+		} else {
+			// Prioritize the question and confirmation keys over optional text.
+			lines = []string{ansi.Truncate(prompt, inner, ""), ansi.Truncate("y yes · n no", inner, "")}
+			lines = lines[:min(budget, len(lines))]
+		}
+	}
+	text := m.styles.danger.Bold(true).Render(strings.Join(lines, "\n"))
+	if border {
+		text = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+			BorderForeground(m.styles.danger.GetForeground()).Padding(0, 1).Width(inner + 2).Render(text)
+	}
+	panel := strings.Split(text, "\n")
+	left := max(0, (m.width-width)/2)
+	top := max(0, (m.height-len(panel))/2)
+	frame := make([]string, m.height)
+	for i, line := range panel {
+		frame[top+i] = strings.Repeat(" ", left) + line
+	}
+	return strings.Join(frame, "\n")
+}
+
+func (m *Model) confirmationFooter(width int) []string {
+	return clipLines([]string{m.helpLine("y/Enter confirm · n/Esc dismiss · q quit")}, width)
 }
 
 func (m *Model) messagePanel(text string, width, limit int) []string {
@@ -227,7 +275,7 @@ func (m *Model) screenHelp(width int) []string {
 	case templateScreen:
 		lines = []string{"↑/↓ scroll · Esc back · q quit · Ctrl-C quit"}
 	case jobScreen:
-		lines = []string{"o output · w children · c cancel · r refresh · ↑/↓ scroll", back}
+		lines = []string{"o output · w children · c cancel · R relaunch · r refresh · ↑/↓ scroll", back}
 	case workflowScreen:
 		lines = []string{"↑/↓ select · d node details · Enter child · r refresh · n/p page", back}
 	case outputScreen:
@@ -248,7 +296,7 @@ func (m *Model) screenHelp(width int) []string {
 		case templateScreen:
 			lines = []string{"↑/↓ scroll", back}
 		case jobScreen:
-			lines = []string{"o output · w children", "c cancel · r refresh · ↑/↓ scroll", back}
+			lines = []string{"o output · w children", "c cancel · R relaunch", "r refresh · ↑/↓ scroll", back}
 		case workflowScreen:
 			lines = []string{"↑/↓ select · d node details", "Enter child · r refresh · n/p page", back}
 		case outputScreen:

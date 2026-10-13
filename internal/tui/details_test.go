@@ -73,7 +73,7 @@ func TestUnavailableJobCapabilities(t *testing.T) {
 	}
 	m := New(context.Background(), "")
 	cleanupModel(t, m)
-	if text := strings.Join(m.renderDetailFields(m.capabilityFields(), 80), "\n"); strings.Count(text, "unknown") != 3 {
+	if text := strings.Join(m.renderDetailFields(m.capabilityFields(), 80), "\n"); strings.Count(text, "unknown") != 4 {
 		t.Fatalf("missing capabilities not shown as unknown: %s", text)
 	}
 }

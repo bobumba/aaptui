@@ -17,6 +17,7 @@ const (
 	Temporary      ErrorKind = "temporary server failure"
 	History        ErrorKind = "output history unavailable"
 	Storage        ErrorKind = "output storage failure"
+	Rejected       ErrorKind = "request rejected"
 )
 
 type APIError struct {

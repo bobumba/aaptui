@@ -3,7 +3,7 @@
 A keyboard-driven terminal client for Ansible Automation Platform 2.6. Browse
 job templates, projects, inventories, and recent jobs of all types, inspect details, navigate
 workflow children, scroll and follow output, and explicitly confirm supported
-job cancellation.
+job cancellation and relaunch.
 
 The header displays the effective AAP URL, the username resolved through `me/`,
 and the number of jobs with status `running` visible to the authenticated token
@@ -52,8 +52,8 @@ two field/value pairs per row; narrower terminals use one pair per row, with a
 stacked layout at very small widths. Descriptions and multiline values span the
 full table width. Long labels and values wrap, and all detail rows can be scrolled.
 Job views separate **Capabilities** from **Job details**. Capabilities list output
-(`o`), workflow children (`w`), and cancellation (`c`) with their availability and
-reasons. All displayed API-returned job information, including execution settings,
+(`o`), workflow children (`w`), cancellation (`c`), and relaunch (`R`) with their
+availability and reasons. All displayed API-returned job information, including execution settings,
 appears under Job details. Cancellation still requires confirmation.
 Credential references show only IDs/names; credential contents, arbitrary
 variables, module arguments, job environments, and artifacts are not displayed.
@@ -143,7 +143,8 @@ remain usable without color.
 
 Lists align resource fields into columns and prioritize names and job statuses
 on narrow terminals. Details wrap and scroll, search keeps the input cursor
-visible, and messages and cancellation prompts have a distinct panel. Help stays
+visible, and cancellation uses a centered prompt that takes keyboard focus and
+identifies the job by name, ID, and type. Messages have a distinct panel. Help stays
 at the bottom, with compact hints on narrow terminals. Output text remains plain;
 following shows the newest lines when the terminal shrinks. Extremely small
 terminals show only the hints and content that fit; enlarge the terminal for
@@ -158,11 +159,11 @@ full details and messages.
 | Host lists/details | Enter opens details; arrows or `j`/`k` scroll details; `n`/`p` page direct/inherited groups; `r` refreshes details and memberships; Esc restores the list |
 | Template details with jobs | Tab switches details/jobs focus; arrows or `j`/`k` scroll/select; Enter opens a job; `n`/`p` page; `r` refreshes jobs; Esc returns |
 | Project details | arrows or `j`/`k` scroll wrapped details; Esc returns |
-| Job details | `o` output; `w` workflow children; `c` cancellation dialog; `r` refresh; arrows or `j`/`k` scroll |
+| Job details | `o` output; `w` workflow children; `c` cancellation dialog; `R` relaunch dialog; `r` refresh; arrows or `j`/`k` scroll |
 | Workflow children | `d` opens node details; Enter opens a launched child; `n`/`p` page; `r` refresh |
 | Workflow node details | arrows or `j`/`k` scroll; Enter opens a launched child; Esc restores the node list |
 | Output | arrows or `j`/`k` scroll; PgUp/PgDown or Ctrl-U/Ctrl-D page output; left/right or `h`/`l` pan; `f` follows newest output; `r` resumes after a stopped error |
-| Cancellation dialog | `y` or Enter confirms the identified job; `n` or Esc dismisses |
+| Cancellation/relaunch dialog | `y` or Enter confirms the identified job; `n` or Esc dismisses; `q` or Ctrl-C quits |
 
 Search consumes ordinary characters, including `q`. Search and workflow results
 redraw the list with the footer anchored to the bottom of the terminal. Esc
@@ -172,9 +173,24 @@ workflows retain back-navigation state. Inaccessible and deleted resources displ
 Unknown job/template types retain common information; unsupported capabilities
 remain explicitly unknown or unavailable. Approval/denial is outside scope.
 
-Only a confirmed cancellation performs a server mutation. State and token
+Only confirmed cancellation or relaunch performs a server mutation. State and token
 permissions are rechecked immediately beforehand. An ambiguous cancellation
 response triggers a status read, never an automatic repeat of the POST.
+While cancellation is pending, other job actions and refresh are blocked;
+Esc and quit remain available. Progress, success, and failure are visible.
+
+`R` relaunches supported playbook jobs, workflow jobs, and ad hoc commands using
+their original settings and job limit. The confirmation identifies the source
+job and explains that it creates a new execution. Success opens the new job's
+details; Esc returns to the source job. If those details cannot be loaded, the
+new job's identity remains available for `r` refresh. Required credential
+passwords are not collected; those jobs show a reason to use the controller UI.
+Missing relaunch permission information is shown as unknown. Project/inventory
+updates, system jobs, approvals, and unknown types have no supported relaunch
+operation. Other actions and refresh are blocked while relaunch is pending.
+Uncertain relaunch responses are never automatically retried; refresh Jobs and
+check for a new execution before retrying manually.
+
 Quitting or leaving output cancels local work, not server jobs.
 
 ## Output and caching
@@ -236,6 +252,6 @@ older `TERM=screen` sessions at 237 columns by 62 rows, checks the initial list
 columns, and selects and opens the last template. Deployed AAP 2.6 validation
 remains deferred.
 
-Launching, relaunching, editing, approval/denial, and WebSocket transport are not
-implemented. Server cancellation permissions and capability/state responses remain
+Launching from templates, editing, approval/denial, and WebSocket transport are not
+implemented. Server cancellation/relaunch permissions and capability responses remain
 authoritative. See [PLAN.md](PLAN.md) and [SPEC.md](SPEC.md) for scope.

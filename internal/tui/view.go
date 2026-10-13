@@ -11,6 +11,11 @@ import (
 )
 
 func (m *Model) View() tea.View {
+	if m.confirming {
+		v := tea.NewView(m.confirmationView())
+		v.AltScreen = true
+		return v
+	}
 	l := m.layout()
 	body := m.body(l.width, l.bodyHeight)
 	if len(body) > l.bodyHeight {

@@ -32,6 +32,9 @@ type wireReference struct {
 }
 
 type wireSummary struct {
+	UserCapabilities struct {
+		Start *bool `json:"start"`
+	} `json:"user_capabilities"`
 	ResolvedEnvironment *wireReference  `json:"resolved_environment"`
 	SourceWorkflowJob   *wireReference  `json:"source_workflow_job"`
 	AncestorJob         *wireReference  `json:"ancestor_job"`

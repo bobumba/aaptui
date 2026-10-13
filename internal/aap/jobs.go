@@ -59,7 +59,7 @@ type Capability struct {
 	State  CapabilityState
 	Reason string
 }
-type JobCapabilities struct{ Output, Cancel, Children Capability }
+type JobCapabilities struct{ Output, Cancel, Children, Relaunch Capability }
 type JobDetails struct {
 	SourceWorkflowJob, AncestorJob *ResourceReference
 	systemText                     *string
@@ -80,6 +80,8 @@ type JobDetails struct {
 	ApprovalTimeout                                                           *int
 	TimedOut                                                                  *bool
 	stdout, cancel, nodes                                                     string
+	relaunch                                                                  string
+	startPermission                                                           *bool
 }
 type wireJob struct {
 	UnifiedJobTemplate *int    `json:"unified_job_template"`
@@ -162,10 +164,12 @@ func (c *Client) Job(ctx context.Context, ref JobRef) (JobDetails, error) {
 		CanceledOn: c.cleanLabel(w.CanceledOn), ApprovalExpiration: c.cleanLabel(w.ApprovalExpiration),
 		Failed: w.Failed, LicenseError: w.LicenseError, OrgHostLimitError: w.OrgHostLimitError, JobSliceNumber: w.JobSliceNumber}
 	unknown := Capability{Unknown, "Capability not exposed by this resource"}
-	d.Capabilities = JobCapabilities{unknown, unknown, unknown}
+	d.Capabilities = JobCapabilities{Output: unknown, Cancel: unknown, Children: unknown, Relaunch: unknown}
 	d.stdout = w.Related["stdout"]
 	d.cancel = w.Related["cancel"]
 	d.nodes = w.Related["workflow_nodes"]
+	d.relaunch = w.Related["relaunch"]
+	d.startPermission = w.Summary.UserCapabilities.Start
 	// Related operations must belong to this exact resource, not merely its origin.
 	for _, pair := range []struct{ link, suffix string }{{d.stdout, "stdout/"}, {d.cancel, "cancel/"}, {d.nodes, "workflow_nodes/"}} {
 		if pair.link == "" {
@@ -174,6 +178,12 @@ func (c *Client) Job(ctx context.Context, ref JobRef) (JobDetails, error) {
 		u, err := c.safeLink(pair.link)
 		if err != nil || u.Path != c.endpoint(route+pair.suffix) {
 			return JobDetails{}, apiError(Malformed, "read job capabilities")
+		}
+	}
+	if d.relaunch != "" {
+		u, err := c.safeLink(d.relaunch)
+		if err != nil || u.Path != c.endpoint(route+"relaunch/") || u.RawQuery != "" || u.ForceQuery {
+			return JobDetails{}, apiError(Malformed, "read job relaunch link")
 		}
 	}
 	switch d.Ref.Type {
@@ -234,5 +244,10 @@ func (c *Client) Job(ctx context.Context, ref JobRef) (JobDetails, error) {
 			}
 		}
 	}
+	capability, err := c.relaunchCapability(ctx, d)
+	if err != nil {
+		return JobDetails{}, err
+	}
+	d.Capabilities.Relaunch = capability
 	return d, nil
 }

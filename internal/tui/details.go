@@ -269,6 +269,7 @@ func (m *Model) capabilityFields() detailFields {
 		{"Output (o)", m.jobDetail.Capabilities.Output},
 		{"Children (w)", m.jobDetail.Capabilities.Children},
 		{"Cancel (c)", m.jobDetail.Capabilities.Cancel},
+		{"Relaunch (R)", m.jobDetail.Capabilities.Relaunch},
 	} {
 		state := item.value.State
 		if state == "" {

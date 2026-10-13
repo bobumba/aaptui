@@ -104,6 +104,8 @@ func (c *Client) request(ctx context.Context, method, link, op string, target an
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		kind := Malformed
 		switch resp.StatusCode {
+		case 400:
+			kind = Rejected
 		case 401:
 			kind = Authentication
 		case 403:

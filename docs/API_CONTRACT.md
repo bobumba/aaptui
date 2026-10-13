@@ -183,6 +183,50 @@ optional fields, false/zero, missing summaries, token/terminal sanitization,
 repository URL redaction, safe errors, canceled/stale reads, scrolling, and
 existing template/output/workflow/cancellation behavior.
 
+## Job relaunch
+
+Reviewed 2026-10-12 against AWX **24.6.1**, commit
+`94e5795dfc37b95c576d61f3e3b4e936c021548c`, using the pinned
+[relaunch views](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/api/views/__init__.py),
+[serializers](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/api/serializers.py), and
+[permissions](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/api/permissions.py).
+This is upstream supporting evidence; deployed AAP 2.6 behavior remains unverified.
+New fixtures are synthetic and cover both configured controller prefixes.
+
+Support `jobs/{id}/relaunch/`, `workflow_jobs/{id}/relaunch/`, and
+`ad_hoc_commands/{id}/relaunch/` only when exposed by `related.relaunch` on that
+exact resource. Project/inventory updates, system jobs, approvals, and unknown
+types have no supported relaunch contract here; no template launch/update
+operation is substituted. Validate related links against the configured origin,
+exact resource path, and prefix, with no query parameters.
+
+`summary_fields.user_capabilities.start` reports permission to start the existing
+job. A relaunch link or successful GET alone does not establish that permission:
+the model permission layer checks read access on GET and start access on POST,
+and workflow relaunch GET returns an empty object. False means unavailable;
+absent means unknown. With start permission, GET relaunch requirements:
+playbook and ad hoc jobs return `passwords_needed_to_start`; workflow returns
+`{}`. Missing/malformed requirements remain unknown. Nonempty password lists
+are unavailable in this TUI, with an explanation to use the controller UI;
+interactive secret entry is outside this implementation. No secrets or arbitrary
+relaunch payload fields are displayed or persisted.
+
+After confirmation, reread source details and requirements, then POST `{}` once.
+For playbook jobs, the view supplies empty `credential_passwords` and defaults
+`hosts` to `all`, retaining the original job limit. No failed-host selection or
+execution overrides are offered. Workflow and ad hoc relaunch also use `{}`.
+Server permission/resource/input checks remain authoritative if they change.
+Success is HTTP 201 with the new resource's `id` and `type` (plus legacy `job` or
+`ad_hoc_command` keys for those types). Require a positive ID different from the
+source and the same supported type; do not follow response links or Location.
+Open the new job and refresh its details, preserving the source in back navigation.
+If the details read fails, keep the new job's identity visible for manual refresh.
+
+Transport loss, timeout/cancellation, server failure, or an unusable success body
+after POST can leave the outcome uncertain. Never retry POST automatically;
+report the uncertain outcome and direct the user to refresh Jobs before retrying.
+Definite permission/input failures use safe classified messages, without raw bodies.
+
 ## Output and completion
 
 Request `stdout/?format=json&start_line=N&end_line=M`. Ranges are zero-based,

@@ -59,8 +59,8 @@ Users can:
 - View a paginated table of the selected template's jobs, newest first
 - Open a job from that table and return to the template's previous context
 
-Launching or relaunching jobs is deferred and is not part of the
-initial implementation.
+Launching jobs from templates remains deferred. Existing jobs can be relaunched
+from job details where supported by the API and permitted by the user's token.
 
 ### Projects
 
@@ -90,6 +90,24 @@ Users can:
   requiring manual refresh
 - Cancel an active job when supported by its type and permitted
   by the user's token
+- Relaunch an existing playbook job, workflow job, or ad hoc command when its
+  relaunch endpoint, permissions, and required inputs permit it
+
+Cancellation requires a prominent, focused confirmation prompt identifying the
+job by name, ID, and type. Dismissal performs no mutation; confirmation performs
+at most one request and displays progress and the result. Background actions and
+refresh are blocked while the request is pending; Esc and quit remain available.
+
+Job details show relaunch (`R`) separately from refresh (`r`), including capability
+state and reasons. Relaunch requires a focused confirmation identifying the
+source job and explaining that it creates a new execution with the original
+settings and limit. Recheck permissions and required inputs before one POST;
+jobs requiring credential passwords direct users to the controller UI. Open the
+new job's details on success and preserve the source in back navigation. Keep
+the new identity visible if its details cannot be read. Never retry ambiguous
+relaunch responses automatically; explain the uncertain outcome and allow
+refreshing Jobs before a manual retry. Project/inventory updates, system jobs,
+approvals, and unknown types remain unavailable for relaunch.
 
 The Jobs view must include all job types exposed by automation
 controller, rather than only playbook jobs. This includes workflow
@@ -121,8 +139,8 @@ arguments, or artifacts. Sanitize external text and redact the configured token.
 
 Job views place all displayed API-returned job fields under one Job details
 section. A separate Capabilities section identifies output (`o`), workflow children
-(`w`), and cancellation (`c`), their availability, and any reasons. Preserve the
-existing navigation and cancellation confirmation behavior.
+(`w`), cancellation (`c`), and relaunch (`R`), their availability, and any reasons.
+Preserve existing navigation and require the focused confirmation for mutations.
 
 All resource detail views use a consistent responsive table with aligned label
 and value columns. Field names are bold and use a theme-aware color distinct from

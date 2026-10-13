@@ -36,6 +36,9 @@ const (
 type Canceller interface {
 	Cancel(context.Context, aap.JobRef) (aap.CancellationResult, error)
 }
+type Relauncher interface {
+	Relaunch(context.Context, aap.JobRef) (aap.RelaunchResult, error)
+}
 type OutputSession interface {
 	Read(context.Context, int, int) (aap.OutputUpdate, error)
 	Next(int) (aap.OutputUpdate, error)
@@ -121,8 +124,11 @@ type Model struct {
 	styles                       styles
 	detailTop, outputLeft        int
 	canceller                    Canceller
+	relauncher                   Relauncher
+	confirmRelaunch              bool
 	confirming                   bool
 	confirmation                 aap.JobRef
+	operation, notice            string
 	outputID                     uint64
 	outputPending, following     bool
 	openOutput                   func(context.Context, aap.JobRef) OutputSession
@@ -213,7 +219,7 @@ func (m *Model) loadJob(ref aap.JobRef) tea.Cmd {
 			}
 		}
 		unknown := aap.Capability{State: aap.Unknown, Reason: "Details are not available"}
-		m.jobDetail = aap.JobDetails{JobSummary: summary, Capabilities: aap.JobCapabilities{Output: unknown, Cancel: unknown, Children: unknown}}
+		m.jobDetail = aap.JobDetails{JobSummary: summary, Capabilities: aap.JobCapabilities{Output: unknown, Cancel: unknown, Children: unknown, Relaunch: unknown}}
 	}
 	return m.begin(func(ctx context.Context) (any, error) { return m.jobs.Job(ctx, ref) })
 }
@@ -274,6 +280,7 @@ type cleanupMsg struct {
 }
 
 func (m *Model) WithCancellation(c Canceller) *Model { m.canceller = c; return m }
+func (m *Model) WithRelaunch(r Relauncher) *Model    { m.relauncher = r; return m }
 func (m *Model) Init() tea.Cmd {
 	return tea.Batch(tea.RequestBackgroundColor, m.loadUser(), m.nextRunningJobs())
 }
@@ -303,6 +310,7 @@ func (m *Model) begin(work func(context.Context) (any, error)) tea.Cmd {
 	m.requestCancel = cancel
 	m.loading = true
 	m.err = nil
+	m.notice = ""
 	return func() tea.Msg { v, err := work(ctx); return resultMsg{id, v, err} }
 }
 func (m *Model) move(s screen) {
@@ -333,6 +341,8 @@ func (m *Model) invalidate() {
 	m.err = nil
 	m.editing = false
 	m.confirming = false
+	m.confirmRelaunch = false
+	m.operation, m.notice = "", ""
 }
 func (m *Model) back() {
 	m.invalidate()
@@ -441,9 +451,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loading = false
+		m.operation = ""
 		m.err = msg.err
 		if result, ok := msg.value.(aap.CancellationResult); ok && result.Job.Ref.ID > 0 {
 			m.jobDetail = result.Job
+			if msg.err == nil && result.Requested {
+				m.notice = "Cancellation requested; job status refreshed."
+			}
+		}
+		if result, ok := msg.value.(aap.RelaunchResult); ok {
+			if result.Source.Ref.ID > 0 {
+				m.jobDetail = result.Source
+			}
+			if msg.err == nil && result.Requested && result.Job.Ref.ID > 0 {
+				m.move(jobScreen)
+				m.jobDetail = result.Job
+				cmd := m.loadJob(result.Job.Ref)
+				m.notice = fmt.Sprintf("Relaunched as job %d; Esc returns to the source job.", result.Job.Ref.ID)
+				return m, cmd
+			}
 		}
 		if msg.err == nil {
 			switch v := msg.value.(type) {
@@ -516,7 +542,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "y", "enter":
 				ref := m.confirmation
 				m.confirming = false
-				return m, m.begin(func(ctx context.Context) (any, error) { return m.canceller.Cancel(ctx, ref) })
+				if m.confirmRelaunch {
+					m.confirmRelaunch = false
+					cmd := m.begin(func(ctx context.Context) (any, error) { return m.relauncher.Relaunch(ctx, ref) })
+					m.operation = "Relaunching job…"
+					return m, cmd
+				}
+				cmd := m.begin(func(ctx context.Context) (any, error) { return m.canceller.Cancel(ctx, ref) })
+				m.operation = "Cancelling job…"
+				return m, cmd
 			case "q":
 				m.quitting = true
 				m.cancel()
@@ -524,7 +558,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			case "n", "esc":
 				m.confirming = false
+				m.confirmRelaunch = false
 			}
+			return m, nil
+		}
+		if m.operation != "" && key != "esc" && key != "q" {
 			return m, nil
 		}
 		if m.editing {
@@ -653,9 +691,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.screen == jobScreen && !m.loading && m.canceller != nil {
 				if m.jobDetail.Capabilities.Cancel.State == aap.Available {
 					m.confirming = true
+					m.confirmRelaunch = false
 					m.confirmation = m.jobDetail.Ref
 				} else {
 					m.err = fmt.Errorf("cancel: %s", m.jobDetail.Capabilities.Cancel.Reason)
+				}
+			}
+		case "R":
+			if m.screen == jobScreen && !m.loading && m.relauncher != nil && m.jobs != nil {
+				if m.jobDetail.Capabilities.Relaunch.State == aap.Available {
+					m.confirming, m.confirmRelaunch = true, true
+					m.confirmation = m.jobDetail.Ref
+				} else {
+					m.err = fmt.Errorf("relaunch: %s", m.jobDetail.Capabilities.Relaunch.Reason)
 				}
 			}
 		case "o":

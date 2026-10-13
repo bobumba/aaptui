@@ -21,8 +21,9 @@ when implementation is requested.
   List projects through `projects/` in the Projects menu, reusing the existing
   project summary and detail types. Retain type-aware detail readers for other
   template resources.
-- Support template listing, search/filtering, and details. Launching,
-  relaunching, approval/denial, and resource editing remain out of scope.
+- Support template listing, search/filtering, and details. Add relaunching of
+  existing jobs where supported by the API and the current token's permissions.
+  Launching from templates, approval/denial, and resource editing remain out of scope.
 - Allow cancellation only for supported active jobs and the current token's
   permissions, following an explicit confirmation in the TUI.
 - Keep output memory bounded. Fetch older output ranges on demand and use
@@ -141,7 +142,7 @@ errors with operation context and expose safe messages instead of raw bodies.
 | `TemplateRef`, `TemplateType`, `TemplateSummary`, `TemplateDetails` | Typed template resources |
 | `JobRef`, `JobType`, `JobStatus` | Job identity, kind, and state |
 | `JobSummary`, `JobDetails` | Common fields and explicit optional type-specific details |
-| `JobCapabilities` | Output, cancellation, and children: availability and reasons |
+| `JobCapabilities` | Output, cancellation, relaunch, and children: availability and reasons |
 | `WorkflowNode` | Node state and optional child-job reference |
 | `ListOptions`, `Page[T]`, `PageCursor` | Search and pagination without HTTP details |
 | `OutputCursor`, `OutputChunk`, `OutputUpdate` | Output ranges, resume position, status, and follow errors |
@@ -149,7 +150,7 @@ errors with operation context and expose safe messages instead of raw bodies.
 | `APIError`, `ErrorKind` | Classified errors with safe presentation |
 
 Use small TUI consumer interfaces for template reading, job reading, workflow
-navigation, output reading/following, and cancellation. Their methods accept
+navigation, output reading/following, cancellation, and relaunching. Their methods accept
 contexts and use these types. Final signatures depend on the offline API contract
 review; avoid speculative abstractions and transport-specific UI interfaces.
 
@@ -214,65 +215,85 @@ Main contains Job Templates, Jobs, Projects, and Inventories. Use Enter to open,
 Esc to return, `q` to quit outside text entry, and Ctrl-C to quit consistently. Search input consumes
 ordinary characters; Esc first exits input mode. Provide visible contextual help,
 manual refresh where useful, page navigation, and output follow controls. Bind
-server cancellation separately and require confirmation identifying the job.
+server cancellation separately and require a prominent confirmation identifying
+the job. Expose relaunch as a distinct job action with its own confirmation.
 
 ## Milestones and acceptance tests
 
-### 1. Add Ctrl-U and Ctrl-D aliases for page navigation
+### 1. Make job cancellation confirmation more visible
 
-Allow the existing Page Up and Page Down actions to be triggered with `Ctrl-U`
-and `Ctrl-D`, respectively, using familiar shortcuts from less and Vim. These
-shortcuts should perform the same actions as the existing page keys.
-
-Acceptance criteria:
-
-- Wherever Page Up or Page Down currently performs an action, `Ctrl-U` or `Ctrl-D`
-  performs the corresponding action with the same paging distance and boundaries.
-- Preserve the existing Page Up and Page Down bindings, focus handling, and text
-  entry behavior.
-- Preserve output history loading and follow-mode behavior when paging.
-- Show the aliases in contextual help and relevant user documentation.
-- Add TUI regression tests comparing each alias with its existing page key,
-  including paging boundaries and output follow-mode behavior.
-
-Implemented and verified offline: `Ctrl-U` and `Ctrl-D` alias Page Up and Page
-Down in output, preserving full-page distance, boundaries, history reads, and
-follow-mode behavior. Help and user documentation include the aliases. Regression
-tests cover aliases, loading/input guards, other screen focus, and help. Modified
-Go files formatted; `go test ./...`, `go vet ./...`, and `git diff --check` passed.
-
-### 2. Display group membership in host details
-
-When viewing a specific host's details, display a list of the groups it belongs
-to alongside the existing host information. Include direct and inherited
-memberships through parent groups, as requested.
+Replace the existing cancellation confirmation panel with a prominent modal popup
+or focused prompt so users clearly see and verify the action before cancelling a job.
 
 Acceptance criteria:
 
-- Retrieve the selected host's group membership through the API layer, reusing
-  existing group types, validated requests, and pagination conventions.
-- Display group names in a clearly labeled Groups section in the host detail
-  view. Ensure memberships beyond the first API page can be viewed.
-- Distinguish a host with no groups from loading, unavailable, permission-denied,
-  and failed membership requests; keep existing host details readable.
-- Preserve refresh, scrolling, responsive layout, safe external-text handling,
-  and back-navigation context. Ignore stale results after changing hosts or
-  leaving the detail view.
-- Add API and TUI regression tests for populated and empty memberships,
-  pagination, request failures, refresh, stale results, and narrow terminals.
-- Update relevant user documentation and record the reviewed API contract before
-  deriving fixtures or relying on membership endpoint behavior.
+- Show the selected job's name, ID, and type, a clear cancellation question,
+  and visible confirm/dismiss controls.
+- Keep the prompt readable in narrow terminals and visually distinct from job
+  details. Sanitize external text using existing rendering conventions.
+- While the prompt is open, direct keyboard input to the confirmation flow and
+  prevent background navigation or unrelated actions. Preserve existing confirm,
+  dismiss, and quit bindings.
+- Dismissing the prompt sends no cancellation request. Confirming sends at most
+  one request and visibly reports progress, success, or failure.
+- Preserve capability and permission checks, job-state reconciliation after an
+  ambiguous response, and protection against stale results.
+- Add TUI regression tests for prompt visibility, job identity, keyboard focus,
+  dismissal, duplicate confirmation, request failures, and narrow terminals.
+- Update contextual help and relevant user documentation.
 
-Implemented and verified offline: host details show visible direct and inherited
-group memberships through `hosts/{id}/all_groups/`, with on-demand `n`/`p` paging
-and `r` refresh. Membership requests run independently of host details and have
-distinct loading, empty, unavailable, permission, authentication, and failure
-states. Request cancellation and identifiers prevent stale results from changing
-another host or screen. The shared detail table retains wrapping and scrolling.
-API and TUI regression tests cover both prefixes, pagination, sanitization,
-failures/recovery, independent reads, cancellation, stale results, resizing, and
-narrow terminals. README.md, SPEC.md, and docs/API_CONTRACT.md are synchronized.
-Modified Go files formatted; `go test ./...`, `go vet ./...`,
+Implemented and verified offline: cancellation now uses a centered, bordered
+prompt with job identity and focused confirm/dismiss/quit controls. Narrow
+terminals use a compact prompt. Pending mutations block other actions and
+refresh, display progress, and report success or safe errors. Existing permission
+checks, reconciliation, and stale-result protection are preserved. Regression
+tests cover visibility, focus, dismissal, duplicate confirmation, failure,
+navigation, and terminal sizes. `go test ./...` and `go vet ./...` passed before
+starting milestone 2.
+
+### 2. Add an option to relaunch a job
+
+Add a distinct action in job details to relaunch the selected job where supported,
+using the server's relaunch operation and showing the newly created job.
+
+Acceptance criteria:
+
+- Review and record the relaunch API contract in `docs/API_CONTRACT.md` before
+  implementation or fixture creation, including supported job types, capability
+  checks, required inputs, and response semantics for both connection modes.
+- Add relaunch capability and operations to the API layer using existing request
+  validation, authentication, safe errors, and context cancellation conventions.
+- Show the action, its shortcut, and availability in job details and contextual
+  help. Explain unsupported, permission-denied, or unknown capability states.
+- Require a prominent confirmation identifying the source job and explaining
+  that relaunch creates a new execution. Dismissal sends no mutation.
+- Handle required relaunch inputs according to the reviewed contract; explain
+  inputs the TUI cannot supply, and never persist or expose secrets.
+- Submit at most one request per confirmation, show progress and safe errors,
+  and open the returned job's details on success while preserving back navigation.
+- Do not automatically retry an ambiguous relaunch response, which could create
+  duplicate jobs. Explain the uncertain outcome and allow refreshing job lists.
+- Ignore stale results after navigation and preserve existing cancellation,
+  output, and workflow behavior.
+- Add API and TUI tests for supported and unsupported types, permissions,
+  required inputs, successful navigation, dismissal, duplicate submission,
+  malformed responses, failures, and stale results.
+- Update `SPEC.md`, `README.md`, and relevant API documentation during implementation.
+
+Implemented and verified offline: job details expose `R` relaunch, distinct from
+`r` refresh, with capability state and reasons. The reviewed contract supports
+playbook jobs, workflow jobs, and ad hoc commands. Jobs requiring credential
+passwords explain that the controller UI is required; unsupported types and
+unknown permissions remain unavailable for execution. Confirmation uses the
+focused prompt and explains that relaunch creates a new execution. The API
+rechecks permission and requirements and sends one POST, preserving original
+settings and limit. Success opens the new job, retaining its identity if detail
+loading fails and preserving the source in back navigation. Uncertain outcomes
+are never automatically retried. API and TUI regression/integration tests cover
+both prefixes, supported/unsupported types, inputs, permission changes, safe
+errors, navigation, duplicate submissions, malformed/ambiguous responses, stale
+results, and narrow terminals. README.md, SPEC.md, and docs/API_CONTRACT.md are
+synchronized. Modified Go files formatted; `go test ./...`, `go vet ./...`,
 `go test -race ./...`, and `git diff --check` passed. AAP 2.6 remains unverified
 against a deployed instance.
 
