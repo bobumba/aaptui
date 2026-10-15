@@ -155,6 +155,11 @@ go build -o aaptui ./cmd/aaptui
 ./aaptui
 ```
 
+Rebuild after updating the source; an existing `./aaptui` executable keeps its
+previous behavior until rebuilt. To run directly from the current source, use
+`go run ./cmd/aaptui`. Check an executable's embedded Git revision with
+`go version -m ./aaptui`.
+
 Every launch lists the saved AAP URLs and offers **Create new configuration**.
 Use arrows or Tab to select and Enter to continue. Selecting a URL uses that
 connection's mode, TLS setting, and token, prompting for credentials if needed.

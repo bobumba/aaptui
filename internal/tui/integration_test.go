@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -117,5 +118,91 @@ func TestOfflineIntegrationBothPrefixes(t *testing.T) {
 				t.Fatal("quit mutated server")
 			}
 		})
+	}
+}
+
+// Exercise real HTTP requests and renderer writes together, rather than only
+// supplying an already-positioned tail through a fake OutputSession.
+func TestRenderedOutputLoadsOnlyTailUntilPageUp(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	const total = 1_000_000
+	type outputRange struct{ start, end int }
+	requests := make(chan outputRange, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var response any
+		switch r.URL.Path {
+		case "/api/v2/jobs/1/":
+			response = map[string]any{"id": 1, "type": "job", "status": "successful", "event_processing_finished": true, "related": map[string]string{"stdout": "/api/v2/jobs/1/stdout/"}}
+		case "/api/v2/jobs/1/stdout/":
+			start, err := strconv.Atoi(r.URL.Query().Get("start_line"))
+			if err != nil {
+				t.Error(err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			end := total
+			if start < 0 {
+				start = max(0, total+start)
+				if r.URL.Query().Has("end_line") {
+					t.Error("tail request has an end_line")
+				}
+			} else {
+				end, err = strconv.Atoi(r.URL.Query().Get("end_line"))
+				if err != nil {
+					t.Error(err)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+			}
+			if start < total-2*aap.OutputLines || end > total || end < start || end-start > aap.OutputLines {
+				t.Error("request walked the log or exceeded the window budget", start, end)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			select {
+			case requests <- outputRange{start, end}:
+			default:
+				t.Error("unexpected repeated output requests")
+			}
+			var text strings.Builder
+			label := "latest-"
+			if r.URL.Query().Has("end_line") {
+				label = "history-"
+			}
+			for i := start; i < end; i++ {
+				text.WriteString(label + strconv.Itoa(i) + "\n")
+			}
+			response = map[string]any{"range": map[string]int{"start": start, "end": end, "absolute_end": total}, "content": text.String()}
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Error(err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client, err := aap.NewClient(config.Settings{URL: server.URL, Mode: config.Direct, TLSVerify: true}, "secret", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(context.Background(), "direct").WithOutput(func(ctx context.Context, ref aap.JobRef) OutputSession {
+		return client.NewOutputSession(ctx, ref)
+	})
+	m.screen = jobScreen
+	m.jobDetail = aap.JobDetails{JobSummary: aap.JobSummary{Ref: aap.JobRef{ID: 1, Type: aap.PlaybookJob}}, Capabilities: aap.JobCapabilities{Output: aap.Capability{State: aap.Available}}}
+	p, waitFor := runTerminal(t, m)
+	waitFor(func(frame string) bool { return strings.Contains(frame, "Job details") })
+	p.Send(key("o"))
+	waitFor(func(frame string) bool { return strings.Contains(frame, "latest-999999") })
+	initial := <-requests
+	if initial.end != total || initial.start <= 0 || len(requests) != 0 {
+		t.Fatal("opening did not fetch just one latest window", initial)
+	}
+	p.Send(key("pgup"))
+	waitFor(func(frame string) bool { return strings.Contains(frame, "history-"+strconv.Itoa(initial.start-1)) })
+	history := <-requests
+	if history.end != initial.start || history.start >= initial.start || len(requests) != 0 {
+		t.Fatal("paging did not load just the preceding window", history)
 	}
 }
