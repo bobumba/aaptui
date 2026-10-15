@@ -35,7 +35,7 @@ func (m *Model) layout() layout {
 	l.header = l.header[:headerHeight]
 	l.bodyHeight = available - headerHeight
 	outputRow := len(m.connectionHeader()) + 2
-	if m.screen == outputScreen && len(l.header) > outputRow {
+	if m.screen == outputScreen && m.taskOutput == nil && len(l.header) > outputRow {
 		start := m.outputUpdate.Chunk.Start + m.outputOffset(l.bodyHeight)
 		end := min(m.outputUpdate.Chunk.End, start+l.bodyHeight)
 		l.header[outputRow] = ansi.Truncate(m.styles.muted.Render(fmt.Sprintf("Job %d · lines %d–%d of %d", m.jobDetail.Ref.ID, start, end, m.outputUpdate.Chunk.AbsoluteEnd)), l.width, "")
@@ -109,7 +109,11 @@ func (m *Model) header(width int) []string {
 	case templatesScreen, projectsScreen, inventoriesScreen, groupsScreen, hostsScreen, jobsScreen, workflowScreen:
 		lines = append(lines, m.columnHeader(width))
 	case outputScreen:
-		lines = append(lines, m.styles.muted.Render(fmt.Sprintf("Job %d · lines %d–%d of %d", m.jobDetail.Ref.ID, m.outputUpdate.Chunk.Start, m.outputUpdate.Chunk.End, m.outputUpdate.Chunk.AbsoluteEnd)))
+		if m.taskOutput != nil {
+			lines = append(lines, m.styles.muted.Render(fmt.Sprintf("Job %d · events %d–%d", m.jobDetail.Ref.ID, m.taskPage.First, m.taskPage.Last)))
+		} else {
+			lines = append(lines, m.styles.muted.Render(fmt.Sprintf("Job %d · lines %d–%d of %d", m.jobDetail.Ref.ID, m.outputUpdate.Chunk.Start, m.outputUpdate.Chunk.End, m.outputUpdate.Chunk.AbsoluteEnd)))
+		}
 		state := m.styles.warning.Render("paused scrolling")
 		if m.following {
 			state = m.styles.accent.Render("following")
@@ -122,7 +126,7 @@ func (m *Model) header(width int) []string {
 		if m.outputUpdate.Retrying {
 			state += " · " + m.styles.warning.Render("reconnecting")
 		}
-		lines = append(lines, state+" · "+m.styles.status(string(m.outputUpdate.Status)))
+		lines = append(lines, m.styles.key.Render("Filter: "+string(m.activeOutputFilter()))+" · "+state+" · "+m.styles.status(string(m.outputUpdate.Status)))
 	}
 	return clipLines(lines, width)
 }
@@ -320,6 +324,9 @@ func (m *Model) screenHelp(width int) []string {
 	}
 	if m.screen == templateScreen && m.templateDetail.Ref.Type == aap.PlaybookTemplate && m.launcher != nil {
 		lines[0] = "L launch job · " + lines[0]
+	}
+	if m.screen == outputScreen {
+		lines = append(lines[:len(lines)-1], "A All · C Changed · F Failed", lines[len(lines)-1])
 	}
 	for i, line := range lines {
 		lines[i] = m.helpLine(line)

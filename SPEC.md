@@ -218,6 +218,23 @@ resource budgets. Live polling and `f` follow must retrieve the latest window
 directly, without automatically backfilling skipped history. Reading older output
 must preserve the visible position while polling continues.
 
+The output view provides uppercase `A` All (default), `C` Changed, and `F`
+Failed, with the active filter visible. Lowercase `f` retains follow mode.
+Playbook jobs and ad hoc commands filter structured host/item result events using their stored changed/failed flags and retain task
+identity and multiline diagnostics. Mixed host outcomes show matching results
+only; changed failures can match both filters. Failed includes API-flagged
+unreachable/error results and excludes ignored failures whose flag is false.
+Unsupported job types and inaccessible metadata show a clear unavailable/error
+state while All remains accessible. Empty matches have a distinct state.
+Each newly opened output view defaults to All.
+
+Task filtering uses bounded server queries and separate event-counter cursors,
+opens at the latest matches, and retrieves older matches on demand. Preserve
+scrolling position during live polling and reject stale results after switching
+filters. Each page contains up to eight events, bounded to 256 KiB and 65,536
+lines; render at most 256 lines per viewport. Keep pages in memory only, with no
+accumulating history cache. Oversized pages fail explicitly and offer All output.
+
 Live output must support scrolling through received output and
 following newly arriving output. Recoverable connection failures
 must be displayed clearly, and following must be resumable without
@@ -275,7 +292,8 @@ Resizing and scrolling preserve existing menu/table focus and navigation context
 
 Inventory/group screens retain their navigation menus; Tab switches menu/details
 focus. Hosts have scrollable detail views with a Groups section listing visible
-direct and inherited memberships, including parent groups. Use `n`/`p` to page
+direct and inherited memberships, including parent groups, under one `Groups:`
+key with one group per list entry. Use `n`/`p` to page
 groups on demand and `r` to refresh details and memberships. Membership requests
 run independently of host detail requests; loading, empty, unavailable, permission,
 and failure states remain distinct, and stale responses are ignored. Workflow

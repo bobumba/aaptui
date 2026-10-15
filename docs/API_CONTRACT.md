@@ -472,3 +472,45 @@ server failures after POST have uncertain outcomes; never automatically retry.
 Retain form inputs after definite failures, disable resubmission after an
 uncertain outcome until the user closes the form and checks Jobs. Do not follow
 response Location headers or persist launch inputs.
+
+### Task-result output filters
+
+Reviewed 2026-10-15 against AWX 24.6.1 commit
+`94e5795dfc37b95c576d61f3e3b4e936c021548c`. Supporting source:
+[events.py](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/main/models/events.py),
+[views](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/api/views/__init__.py),
+[serializers](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/api/serializers.py),
+[pagination](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/api/pagination.py),
+and [NoTruncateMixin](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/api/views/mixin.py).
+The upstream [filtering documentation](https://docs.ansible.com/projects/awx/en/24.6.1/rest_api/filtering.html)
+describes boolean, startswith, and integer comparison lookups. These remain
+upstream assumptions for AAP 2.6; no deployed-instance validation is available.
+
+Playbook jobs use `jobs/{id}/job_events/`; ad hoc commands use
+`ad_hoc_commands/{id}/ad_hoc_command_events/`, under the selected API prefix.
+Filter `event__startswith=runner_` together with `changed=true` or `failed=true`.
+This excludes parent play/task events and recap events whose flags can aggregate
+child outcomes. Each matching host/item result retains its stdout and task name
+(`task`, falling back to `event_data.task`), host name, and counter. Mixed host
+outcomes show only matching results, rather than every host of the same task.
+A result may match both choices. Failure includes unreachable/error results when
+flagged by the server; ignored failures have `failed=false` and are excluded.
+Changed follows the stored flag derived from `event_data.res.changed`.
+
+Use `limit=9` to fetch eight results and one lookahead, without a collection count.
+Order by `-counter` for latest/older pages and `counter` for newer pages, using
+exclusive `counter__lt`/`counter__gt` keysets. Reverse descending pages for display.
+Counters are event positions, never stdout line offsets. Request `no_truncate=1`
+to retain multiline diagnostics. Each response has the existing 1 MiB transport
+limit; displayed page text is limited to 256 KiB and 65,536 lines, with at most 256
+lines rendered per viewport. Oversized pages fail explicitly
+and offer All output instead of silently truncating. Pages remain in memory only;
+filtered history is fetched on demand without an accumulating cache. At most one
+live poll and one cancellable history request are pending per view.
+
+Poll job details and the latest matching page every two seconds. Stop after a
+terminal job reports `event_processing_finished=true` and that final page has
+been fetched. Keep existing retry/backoff behavior and do not retry authentication
+or permission failures automatically. Unknown completion evidence stays visible.
+Other job types do not have a reviewed task-outcome contract and expose All only.
+Synthetic tests model these contracts; they are not captured AAP responses.

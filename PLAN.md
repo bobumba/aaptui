@@ -1,8 +1,7 @@
 # AAP TUI Implementation Plan
 
-Status: earlier completed milestones have been removed. The job-output milestone
-below is implemented and verified offline. Deployed AAP 2.6 and manual
-interactive-terminal validation remain unavailable.
+Status: both milestones below are complete with offline verification. Deployed
+AAP 2.6 and manual interactive-terminal validation remain unavailable.
 
 This plan refines `SPEC.md` and follows `AGENTS.md`. No application code is
 authorized by the design discussion alone. Implement one milestone at a time
@@ -267,69 +266,102 @@ explicit Launch/Cancel buttons; ordinary typing stays within the focused input.
 
 ## Milestones and acceptance tests
 
-### 1. Open job output at the end and load history on demand
+### 1. Display host groups under a single Groups key
 
 Status: complete (offline verification).
 
-Previously, pressing `o` fetched stdout at line zero and immediately paged
-through successive chunks until reaching the end. Output now opens with an
-initial view of the latest lines. The user usually needs the result at
-the bottom and should read earlier output by paging upward, conserving network,
-memory, disk, and terminal-rendering work.
+Inventory host details currently repeat the `Group:` key for every membership.
+Replace those repeated fields with one `Groups:` key whose value is a list of
+memberships, with one group per line. For example:
+
+```text
+Groups:  - 7 · webservers
+         - 12 · production
+```
 
 Acceptance criteria:
 
-- `o` opens at the bottom for both completed and active jobs. Show the latest
-  viewport immediately after bounded loading, with lines in their original
-  chronological order. Do not replay the job's output through the terminal.
-- Retrieve a bounded latest window and its current output end in one snapshot
-  using reviewed API tail-range semantics. The initial request count and
-  transferred data must remain bounded independently of total job length. Do not fetch all stdout
-  and then discard the beginning, or sequentially page through it to find the end.
-- Page Up/Ctrl-U and up/`k` load earlier ranges only as needed. Reuse cached
-  ranges, keep scrolling stable when history arrives, and preserve Page
-  Down/Ctrl-D and down/`j` navigation back toward the latest output.
-- Keep live polling and `f` follow behavior, but fetch only a bounded latest
-  window when output grows or follow resumes. Do not automatically backfill
-  intervening history. Scrolling up holds the visible position while polling
-  continues; returning to follow shows the newest lines directly.
-- Permit sparse cached ranges without treating intentionally unloaded history
-  as corruption. Historical reads must not rewind the live cursor. Preserve
-  overlap handling, mutable partial lines, and explicit reset/expired-history
-  errors, including when output changes between discovery and range reads.
-- Retain the existing per-session limits: 256 lines and 256 KiB per chunk/window,
-  256 KiB of cached text in memory, 16 MiB on disk, 65,536 indexed lines, and
-  256 cache files. Keep requests and pending updates bounded; avoid rendering
-  intermediate pages or repeatedly fetching unchanged cached history.
-- Handle empty output, output shorter than the viewport, unsupported stdout,
-  inline system-job stdout, server display limits, and delayed final output.
-  Stop polling when supported completion evidence and the final latest window
-  are available, without requiring the entire history to have been downloaded.
-- Preserve cancellation on leaving output, stale-session message rejection,
-  retries, secret redaction, terminal sanitization, private cache permissions,
-  cleanup, and terminal restoration.
-- Add fake-server regression tests with very large logical stdout. Assert a
-  bounded opening request count and response size, no traversal from line zero,
-  on-demand history requests, cache reuse, cursor stability, active-job growth,
-  follow resumption, completion, and empty/short output. Add TUI tests for initial
-  bottom placement, upward paging, and stable history position during polling.
-- Keep transport/range/cache logic in `internal/aap` and viewport/navigation
-  behavior in `internal/tui`. Review and record any newly relied-on range
-  semantics in `docs/API_CONTRACT.md`; update `README.md` and `SPEC.md` during
-  implementation to describe opening at the end and loading history on demand.
+- Render exactly one `Groups:` key for a populated membership page, with each
+  visible group listed beneath it. Preserve the existing group ID/name format
+  and direct/inherited membership coverage, including parent groups.
+- Reuse the existing detail-field renderer and membership reader where practical.
+  Keep the list together and readable at narrow and wide terminal widths; wrap
+  long names without repeating the key or losing entries.
+- Preserve membership counts, `n`/`p` pagination, refresh, detail scrolling, and
+  back navigation. List the current page without downloading every membership.
+- Preserve distinct loading, empty, permission-denied, unavailable, and failed
+  request states. Membership failures must not hide other host details.
+- Add regression tests for multiple groups under one key, a single group, empty
+  memberships, long names, narrow/wide layouts, and paginated memberships.
+- Update the host-details description in `README.md` and the corresponding
+  requirement in `SPEC.md` during implementation.
 
-Implemented: output opens and polls with `start_line=-N`, omitting `end_line`,
-so one stdout request retrieves the latest screenful and its absolute range.
-Sparse caching supports live jumps and on-demand history without rewinding the
-cursor; skipped mutable partial lines are invalidated for later reload. Following
-discards pending history results, and polling preserves history position and
-loading state. The upstream range behavior and server-side scan limitation are
-recorded in `docs/API_CONTRACT.md`. Regression tests cover million-line logical
-output, bounded opening work, cache reuse, jumps, partial lines, completion,
-resets, malformed/oversized responses, and TUI history/follow request ordering.
-Changed Go files were formatted; `go test ./...`, `go vet ./...`,
-`go test -race ./...`, and `git diff --check` passed. Deployed AAP 2.6 and manual
-interactive-terminal validation remain unavailable.
+Implemented: host memberships render as one multiline `Groups:` field, retaining
+IDs/names, counts, pagination, and independent loading/error states. Regression
+tests cover single/multiple groups, long names, and narrow/wide layouts; existing
+membership-state and pagination tests remain in place.
+
+### 2. Filter job output by changed or failed tasks
+
+Status: complete (offline verification).
+
+Add output-view options to show only changed tasks or only failed tasks. Keep
+unfiltered output as the default and provide a visible way to return to it.
+
+Acceptance criteria:
+
+- Expose three clearly labeled choices in the output view: `All`, `Changed`, and
+  `Failed`. Show the active choice and its controls in contextual help. Keep
+  existing scrolling, follow, refresh, and back-navigation controls usable.
+- `Changed` limits displayed output to tasks with a changed result; `Failed`
+  limits it to tasks with a failed result. Retain task identity and the relevant
+  result output in chronological order, including multiline diagnostics.
+- Use structured task/event outcome metadata rather than matching words or ANSI
+  colors in stdout. During implementation, review the API contract for task
+  events, changed/failure classification, and mapping events to output. Record
+  the supported job types and semantics in `docs/API_CONTRACT.md` before relying
+  on them. Include explicit coverage of mixed host results and ignored failures.
+- Keep task filters available where the API exposes sufficient metadata. For
+  unsupported job types or inaccessible metadata, show a clear unavailable state
+  while keeping unfiltered output accessible. Do not present request failures as
+  an empty match set.
+- Switching filters applies to completed and active jobs, shows the latest
+  matching output, and rejects stale results from the previous selection. An
+  explicit empty state indicates when no matching tasks are available yet.
+  Start each newly opened job output view with `All` selected.
+- Preserve opening at the end, on-demand older history, live polling, follow
+  mode, and stable scrolling while new output arrives. Apply the active filter
+  to newly arriving results and allow paging through older matching output.
+- Keep requests, memory, disk caching, and pending updates bounded under the
+  existing output limits. Use bounded API queries/pages for matching events;
+  do not download all stdout or all events just to filter a large job locally.
+  Keep filtered positions/cursors distinct from absolute stdout line positions.
+- Preserve request cancellation, retries, stale-session rejection, secret
+  redaction, terminal sanitization, private cache permissions, and cleanup.
+  Keep API retrieval/classification in `internal/aap` and selection/rendering in
+  `internal/tui`, using explicit dependencies and existing patterns.
+- Add fake-server and TUI regression tests covering All/Changed/Failed switching,
+  matching and nonmatching outcomes, mixed host results, multiline output, no
+  matches, active-job updates, history paging, filter changes during in-flight
+  requests, unsupported/denied metadata, and bounded work for large logical jobs.
+- Update `README.md` and `SPEC.md` during implementation with the filter controls,
+  supported job types, outcome semantics, and any remaining limitations.
+
+Implemented: `A` All, `C` Changed, and `F` Failed select output modes. Playbook
+and ad hoc task filters use structured host/item outcome flags, task names, and
+full bounded event stdout. Eight-event keyset pages support history and live
+polling without collecting the full job. Filter sessions keep counters separate
+from stdout offsets, cancel on switching/leaving, and reject stale results.
+Unsupported types retain All; metadata errors and empty matches are distinct.
+Oversized event pages report their limit and offer All. The reviewed contract,
+outcome semantics, memory bounds, and offline compatibility limits are recorded
+in `docs/API_CONTRACT.md`, `README.md`, and `SPEC.md`.
+
+Verification: changed Go files formatted with `gofmt -w`; `go test ./...`,
+`go vet ./...`, `go test -race ./...`, and `git diff --check` pass. Synthetic tests
+cover both API prefixes, both supported job types, large logical jobs, mixed
+outcomes, ignored failures, multiline diagnostics, polling and completion,
+filter switching, stale results, cancellation, errors, and output bounds.
 
 For each implementation milestone: format changed Go files with `gofmt -w`, run
 `go test ./...` and `go vet ./...`, review changes for unintended scope, and update

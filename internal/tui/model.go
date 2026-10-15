@@ -45,6 +45,10 @@ type OutputSession interface {
 	Stop()
 	Close() error
 }
+type outputCloser interface {
+	Stop()
+	Close() error
+}
 type WorkflowReader interface {
 	WorkflowNodes(context.Context, aap.JobRef, aap.ListOptions) (aap.Page[aap.WorkflowNode], error)
 }
@@ -136,7 +140,12 @@ type Model struct {
 	outputPending, following     bool
 	openOutput                   func(context.Context, aap.JobRef) OutputSession
 	output                       OutputSession
-	sessions                     []OutputSession
+	sessions                     []outputCloser
+	outputFilter                 aap.OutputFilter
+	openTaskOutput               func(context.Context, aap.JobRef, aap.OutputFilter) TaskOutputSession
+	taskOutput                   TaskOutputSession
+	taskPage                     aap.TaskOutputPage
+	taskTop                      int
 	outputUpdate                 aap.OutputUpdate
 	outputTop                    int
 	cleanupErr                   error
@@ -249,14 +258,18 @@ func (m *Model) readOutput(start int) tea.Cmd {
 	return m.begin(func(ctx context.Context) (any, error) { return session.Read(ctx, start, end) })
 }
 func (m *Model) closeOutput() tea.Cmd {
-	if m.output == nil {
+	var s outputCloser = m.output
+	if m.taskOutput != nil {
+		s = m.taskOutput
+	}
+	if s == nil {
 		return nil
 	}
-	s := m.output
 	m.outputID++
 	m.outputPending = false
 	s.Stop()
 	m.output = nil
+	m.taskOutput = nil
 	return func() tea.Msg { return cleanupMsg{session: s, err: s.Close()} }
 }
 
@@ -278,7 +291,7 @@ func (m *Model) nextOutput() tea.Cmd {
 }
 
 type cleanupMsg struct {
-	session OutputSession
+	session outputCloser
 	err     error
 }
 
@@ -409,6 +422,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.BackgroundColorMsg:
 		m.styles = newStyles(msg.IsDark())
+	case taskLiveMsg:
+		return m, m.acceptTaskLive(msg)
 	case liveMsg:
 		if msg.id != m.outputID || m.screen != outputScreen || m.quitting {
 			return m, nil
@@ -504,6 +519,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err == nil {
 			switch v := msg.value.(type) {
+			case taskReadMsg:
+				m.acceptTaskPage(v)
 			case templateDetailsMsg:
 				m.templateDetail = v.details
 			case templateJobsMsg:
@@ -643,6 +660,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.screen == outputScreen {
+			switch key {
+			case "A":
+				return m, m.selectOutputFilter(aap.OutputAll)
+			case "C":
+				return m, m.selectOutputFilter(aap.OutputChanged)
+			case "F":
+				return m, m.selectOutputFilter(aap.OutputFailed)
+			}
+			if m.taskOutput != nil {
+				if cmd, handled := m.taskOutputKey(key); handled {
+					return m, cmd
+				}
+			}
+		}
 		switch key {
 		case "L":
 			if m.screen == templateScreen && m.templateDetail.Ref.Type == aap.PlaybookTemplate && !m.loading && m.launcher != nil && m.jobs != nil {
@@ -775,6 +807,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.err = fmt.Errorf("output: %s", m.jobDetail.Capabilities.Output.Reason)
 				} else if m.openOutput != nil {
 					m.move(outputScreen)
+					m.outputFilter = aap.OutputAll
 					m.output = m.openOutput(m.ctx, m.jobDetail.Ref)
 					m.sessions = append(m.sessions, m.output)
 					m.outputTop = 0

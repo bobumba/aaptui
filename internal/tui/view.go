@@ -118,6 +118,25 @@ func (m *Model) body(width, height int) []string {
 		top := min(m.detailTop, max(0, len(lines)-height))
 		lines = lines[top:]
 	case outputScreen:
+		if m.taskOutput != nil {
+			if m.taskPage.Text == "" {
+				if m.loading || m.err != nil {
+					return []string{m.emptyState("matching tasks")}
+				}
+				return []string{m.styles.muted.Render("No matching tasks available yet.")}
+			}
+			height = min(height, aap.OutputLines)
+			lines = m.taskLines()
+			top := min(m.taskTop, max(0, len(lines)-height))
+			if m.following {
+				top = max(0, len(lines)-height)
+			}
+			lines = lines[top:min(len(lines), top+height)]
+			for i, line := range lines {
+				lines[i] = ansi.Cut(line, m.outputLeft, m.outputLeft+width)
+			}
+			return lines
+		}
 		text := strings.TrimSuffix(m.outputUpdate.Chunk.Text, "\n")
 		if text == "" {
 			return nil

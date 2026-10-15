@@ -242,21 +242,21 @@ func TestOutputRequestsAndPagingMatchVisibleRows(t *testing.T) {
 	m.screen, m.width, m.height, m.output = outputScreen, 80, 24, f
 	m.outputUpdate.CompletionKnown = true
 	m.outputUpdate.Chunk.AbsoluteEnd = 1000
-	// Five header rows and two help rows leave seventeen output rows.
+	// Five header rows and three help rows leave sixteen output rows.
 	m.nextOutput()()
-	if f.nextLines != 17 {
-		t.Fatalf("live window = %d, want 17", f.nextLines)
+	if f.nextLines != 16 {
+		t.Fatalf("live window = %d, want 16", f.nextLines)
 	}
 	m.readOutput(50)()
-	if f.start != 50 || f.end != 67 {
-		t.Fatalf("read window = %d–%d, want 50–67", f.start, f.end)
+	if f.start != 50 || f.end != 66 {
+		t.Fatalf("read window = %d–%d, want 50–66", f.start, f.end)
 	}
 	m.loading = false
 	m.outputTop = 50
 	_, cmd := m.Update(key("pgdown"))
 	cmd()
-	if f.start != 67 || f.end != 84 {
-		t.Fatalf("page window = %d–%d, want 67–84", f.start, f.end)
+	if f.start != 66 || f.end != 82 {
+		t.Fatalf("page window = %d–%d, want 66–82", f.start, f.end)
 	}
 	m.Update(tea.WindowSizeMsg{Width: 30, Height: 10})
 	if cmd := m.nextOutput(); cmd != nil {
@@ -287,14 +287,14 @@ func TestOutputTailAndPanAfterResize(t *testing.T) {
 	}
 	m.outputUpdate = aap.OutputUpdate{Chunk: aap.OutputChunk{Start: 10, End: 30, AbsoluteEnd: 30, Text: text.String()}, CompletionKnown: true}
 	lines := assertFrameSize(t, m)
-	// At 40 columns, five header and three footer rows leave four log rows.
-	for i, line := range lines[5:9] {
-		want := ansi.Cut(fmt.Sprintf("line%02d 部署 %s", 26+i, strings.Repeat("x", 50)), 0, 38)
+	// At 40 columns, five header and four footer rows leave three log rows.
+	for i, line := range lines[5:8] {
+		want := ansi.Cut(fmt.Sprintf("line%02d 部署 %s", 27+i, strings.Repeat("x", 50)), 0, 38)
 		if line != " "+want+" " {
 			t.Fatalf("log styling/content changed: %q, want %q", line, want)
 		}
 	}
-	if !strings.Contains(ansi.Strip(lines[3]), "lines 26–30") {
+	if !strings.Contains(ansi.Strip(lines[3]), "lines 27–30") {
 		t.Fatalf("range does not describe visible tail: %q", lines[3])
 	}
 	m.outputLeft = 8
@@ -305,7 +305,7 @@ func TestOutputTailAndPanAfterResize(t *testing.T) {
 	}
 	_, cmd := m.Update(key("k"))
 	cmd()
-	if m.following || f.start != 25 || f.end != 29 {
+	if m.following || f.start != 26 || f.end != 29 {
 		t.Fatalf("scroll did not begin at visible tail: following=%t range=%d–%d", m.following, f.start, f.end)
 	}
 }

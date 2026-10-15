@@ -264,3 +264,51 @@ func TestHostGroupsCancelInFlight(t *testing.T) {
 		})
 	}
 }
+
+func TestHostGroupsSingleList(t *testing.T) {
+	for _, count := range []int{1, 3} {
+		for _, width := range []int{30, 80, 160} {
+			t.Run(fmt.Sprintf("%d/%d", count, width), func(t *testing.T) {
+				m := New(context.Background(), "")
+				cleanupModel(t, m)
+				m.hostGroupsKnown = true
+				m.hostGroupPage.Count = count + 10
+				for i := 0; i < count; i++ {
+					m.hostGroupPage.Items = append(m.hostGroupPage.Items, aap.GroupSummary{ID: i + 1, Name: strings.Repeat("long-name-", 15) + fmt.Sprint(i)})
+				}
+				fields := m.hostGroupFields()
+				var list *detailField
+				for i := range fields {
+					if fields[i].label == "Group" {
+						t.Fatal("repeated Group field")
+					}
+					if fields[i].label == "Groups" {
+						if list != nil {
+							t.Fatal("multiple Groups fields")
+						}
+						list = &fields[i]
+					}
+				}
+				if list == nil || len(strings.Split(list.value, "\n")) != count {
+					t.Fatal("missing list entries")
+				}
+				lines := m.renderDetailFields(detailFields{*list}, width)
+				text := ansi.Strip(strings.Join(lines, "\n"))
+				if strings.Count(text, "Groups:") != 1 {
+					t.Fatal("missing or repeated Groups key", text)
+				}
+				var recovered strings.Builder
+				for _, line := range lines {
+					if ansi.StringWidth(line) > width {
+						t.Fatal("list exceeds width")
+					}
+					recovered.WriteString(ansi.Strip(ansi.Cut(line, 9, width)))
+				}
+				compact := func(s string) string { return strings.Join(strings.Fields(s), "") }
+				if compact(recovered.String()) != compact(list.value) {
+					t.Fatal("list lost content", text)
+				}
+			})
+		}
+	}
+}

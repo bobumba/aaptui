@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -79,8 +80,16 @@ func (m *Model) hostGroupFields() detailFields {
 		if len(m.hostGroupPage.Items) == 0 {
 			fields.field("Membership", "No visible groups.")
 		}
+		var groups []string
 		for _, group := range m.hostGroupPage.Items {
-			fields.reference("Group", &aap.ResourceReference{ID: group.ID, Name: group.Name})
+			entry := fmt.Sprintf("- %d", group.ID)
+			if group.Name != "" {
+				entry += " · " + group.Name
+			}
+			groups = append(groups, entry)
+		}
+		if len(groups) > 0 {
+			fields = append(fields, detailField{label: "Groups", value: strings.Join(groups, "\n"), preformatted: true})
 		}
 		if m.hostGroupPage.Previous.Present() || m.hostGroupPage.Next.Present() {
 			paging := ""

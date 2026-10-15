@@ -84,7 +84,8 @@ page, search, selection, and inventory/group context. Inventory and group screen
 also display object details; Tab switches between menu selection and detail
 scrolling. Enter on a host opens its details, including enabled state, owning
 inventory, instance ID, failure flags, last job, and facts timestamp. The Groups
-section lists visible direct and inherited memberships, including parent groups;
+section uses one `Groups:` key with a list of visible direct and inherited
+memberships, including parent groups;
 use `n`/`p` to page memberships and arrows or `j`/`k` to scroll. Loading, empty,
 unavailable, and failed membership requests have distinct states; other host
 information remains readable. Use `r` to refresh inventory, group, or host details
@@ -340,7 +341,7 @@ full details and messages.
 | Job details | `o` output; `w` workflow children; `c` cancellation dialog; `R` relaunch dialog; `r` refresh; arrows or `j`/`k` scroll |
 | Workflow children | `d` opens node details; Enter opens a launched child; `n`/`p` page; `r` refresh |
 | Workflow node details | arrows or `j`/`k` scroll; Enter opens a launched child; Esc restores the node list |
-| Output | arrows or `j`/`k` scroll; PgUp/PgDown or Ctrl-U/Ctrl-D page output; left/right or `h`/`l` pan; `f` follows newest output; `r` resumes after a stopped error |
+| Output | `A` All, `C` Changed, `F` Failed; arrows or `j`/`k` scroll; PgUp/PgDown or Ctrl-U/Ctrl-D page output; left/right or `h`/`l` pan; `f` follows newest output; `r` resumes after a stopped error |
 | Cancellation/relaunch dialog | `y` or Enter confirms the identified job; `n` or Esc dismisses; `q` or Ctrl-C quits |
 
 Search consumes ordinary characters, including `q`. Search and workflow results
@@ -378,6 +379,24 @@ Press `o` in job details to open the latest screenful of output. Lines remain in
 chronological order; Page Up/Ctrl-U or up/`k` loads earlier output on demand.
 Opening output does not download or replay the entire job log.
 
+Use uppercase `A` for All output (the default), `C` for Changed, or `F` for
+Failed. Lowercase `f` keeps following the latest output. The active filter
+appears in the header. Task filters support playbook jobs and ad hoc commands
+and use structured API outcome flags. They show matching host/item
+results with task names and multiline diagnostics in chronological order. A task
+with mixed host outcomes shows only matching results; a changed failure can
+appear under either filter. Failed includes unreachable/error results flagged by
+the server, and excludes ignored failures whose API failure flag is false.
+Other job types retain All output and explain when task filters are unavailable.
+Permission or metadata errors are displayed separately from an empty match set;
+press `A` to return to All. Each newly opened job starts with All selected.
+
+Filtered output opens at the latest matching results. Scroll or page upward to
+retrieve older matching results; scroll down to reach newer results, or use `f`
+to resume following the latest matches. Polling continues while reading history
+without moving your visible position. Switching filters cancels the previous
+session and its pending history requests.
+
 Output polls every two seconds for the latest bounded window, skipping intervening
 history when output grows rapidly. `f` returns directly to the newest lines.
 Recoverable failures retain the cursor and retry with exponential backoff capped
@@ -401,6 +420,10 @@ Limits per output session:
 - Hot text cache: 256 KiB, accounting 64 bytes per cached line in addition to text.
 - Disk cache: 16 MiB, at most 256 files and 65,536 indexed lines; oldest files evict
   first. Index metadata and temporary decoding buffers have separate finite bounds.
+- Task filters: eight matching events per page plus one lookahead; displayed
+  page text is bounded to 256 KiB and 65,536 lines, with at most 256 visible lines.
+  Pages remain in memory only and are fetched on demand. Oversized pages produce
+  an explicit error; use All to read ranged stdout instead.
 - Lists: 50 resources by default, at most 100 per page. Filtering stays server-side.
 
 Caches live in random `~/.cache/aaptui/session-*` directories located using the
