@@ -28,18 +28,7 @@ func TestFollowRetryOverlapDelayedFinalOutput(t *testing.T) {
 			if p >= 2 {
 				all = []string{"one\n", "partial\n", "final\n"}
 			}
-			start, err := strconv.Atoi(r.URL.Query().Get("start_line"))
-			if err != nil {
-				t.Error(err)
-			}
-			end, err := strconv.Atoi(r.URL.Query().Get("end_line"))
-			if err != nil {
-				t.Error(err)
-			}
-			end = min(end, len(all))
-			if err := json.NewEncoder(w).Encode(map[string]any{"range": map[string]int{"start": start, "end": end, "absolute_end": len(all)}, "content": strings.Join(all[start:end], "")}); err != nil {
-				t.Error(err)
-			}
+			writeTestOutput(t, w, r, len(all), func(i int) string { return all[i] })
 			return
 		}
 		status := "running"
@@ -135,48 +124,86 @@ func TestFollowBackoffCap(t *testing.T) {
 		}
 	}
 }
-func TestFinalOutputCatchUpAcrossBoundedChunks(t *testing.T) {
-	var fetches atomic.Int32
-	c, _ := testClient(t, config.Gateway, func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "stdout/") {
-			fetches.Add(1)
-			start, err := strconv.Atoi(r.URL.Query().Get("start_line"))
-			if err != nil {
-				t.Error(err)
-			}
-			end, err := strconv.Atoi(r.URL.Query().Get("end_line"))
-			if err != nil {
-				t.Error(err)
-			}
-			end = min(end, 600)
-			if err := json.NewEncoder(w).Encode(map[string]any{"range": map[string]int{"start": start, "end": end, "absolute_end": 600}, "content": strings.Repeat("line\n", end-start)}); err != nil {
-				t.Error(err)
-			}
+
+// writeTestOutput models AWX 24.6.1 Python slicing, including negative
+// reported starts for tail requests larger than the available output.
+func writeTestOutput(t *testing.T, w http.ResponseWriter, r *http.Request, total int, line func(int) string) {
+	t.Helper()
+	start, err := strconv.Atoi(r.URL.Query().Get("start_line"))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	end := total
+	if value := r.URL.Query().Get("end_line"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			t.Error(err)
 			return
 		}
-		if _, err := w.Write([]byte(`{"id":1,"type":"job","status":"successful","event_processing_finished":true,"related":{"stdout":"/api/controller/v2/jobs/1/stdout/"}}`)); err != nil {
-			t.Error(err)
-		}
-	})
-	s := c.NewOutputSession(context.Background(), JobRef{1, PlaybookJob})
-	s.factory = func() (*OutputStore, error) { return testStore(t, DefaultOutputLimits()), nil }
-	s.wait = func(ctx context.Context, d time.Duration) error {
-		if d != 0 {
-			t.Error("catch-up waited", d)
-		}
-		return ctx.Err()
+		end = min(n, total)
 	}
-	defer s.Close()
-	for i := 0; i < 3; i++ {
-		u, err := s.Next(10)
-		if err != nil || u.Complete != (i == 2) {
-			t.Fatal(u, err)
-		}
+	if start < 0 {
+		start += total
 	}
-	if s.store.Cursor().Line != 600 || fetches.Load() != 3 {
-		t.Fatal("output truncated")
+	var text strings.Builder
+	for i := max(0, start); i < end; i++ {
+		text.WriteString(line(i))
+	}
+	if err := json.NewEncoder(w).Encode(map[string]any{"range": map[string]int{"start": start, "end": end, "absolute_end": total}, "content": text.String()}); err != nil {
+		t.Error(err)
 	}
 }
+
+func TestOutputTailAndHistory(t *testing.T) {
+	for _, total := range []int{0, 3, 1_000_000} {
+		t.Run(strconv.Itoa(total), func(t *testing.T) {
+			var fetches, details atomic.Int32
+			c, _ := testClient(t, config.Gateway, func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "stdout/") {
+					fetches.Add(1)
+					if fetches.Load() == 1 && (r.URL.Query().Get("start_line") != "-10" || r.URL.Query().Has("end_line")) {
+						t.Error("opening traversed history", r.URL.RawQuery)
+					}
+					writeTestOutput(t, w, r, total, func(i int) string { return strconv.Itoa(i) + "\n" })
+					return
+				}
+				details.Add(1)
+				if _, err := w.Write([]byte(`{"id":1,"type":"job","status":"successful","event_processing_finished":true,"related":{"stdout":"/api/controller/v2/jobs/1/stdout/"}}`)); err != nil {
+					t.Error(err)
+				}
+			})
+			s := c.NewOutputSession(context.Background(), JobRef{1, PlaybookJob})
+			s.factory = func() (*OutputStore, error) { return testStore(t, DefaultOutputLimits()), nil }
+			t.Cleanup(func() {
+				if err := s.Close(); err != nil {
+					t.Error(err)
+				}
+			})
+			u, err := s.Next(10)
+			if err != nil || !u.Complete || u.Cursor.Line != total || u.Chunk.Start != max(0, total-10) || u.Chunk.End != total || len(outputLines(u.Chunk.Text)) != min(total, 10) {
+				t.Fatal(u, err)
+			}
+			if fetches.Load() != 1 || details.Load() != 1 || len(s.store.index) != min(total, 10) || len(u.Chunk.Text) > 100 {
+				t.Fatal("opening work not bounded", fetches.Load(), details.Load(), len(s.store.index))
+			}
+			if total < 20 {
+				return
+			}
+			start, end := total-20, total-10
+			for i := 0; i < 2; i++ {
+				history, err := s.Read(context.Background(), start, end)
+				if err != nil || history.Cursor.Line != total || history.Chunk.Start != start || !strings.HasPrefix(history.Chunk.Text, strconv.Itoa(start)+"\n") {
+					t.Fatal(history, err)
+				}
+			}
+			if fetches.Load() != 2 || len(s.store.index) != 20 {
+				t.Fatal("history was fetched repeatedly or backfilled", fetches.Load(), len(s.store.index))
+			}
+		})
+	}
+}
+
 func TestSessionReloadsEvictedHistoryWithoutMovingCursor(t *testing.T) {
 	c, _ := testClient(t, config.Direct, func(w http.ResponseWriter, r *http.Request) {
 		body := `{"id":1,"type":"job","status":"running","related":{"stdout":"/api/v2/jobs/1/stdout/"}}`
@@ -199,5 +226,66 @@ func TestSessionReloadsEvictedHistoryWithoutMovingCursor(t *testing.T) {
 	u, err := s.Read(context.Background(), 0, 1)
 	if err != nil || u.Cursor.Line != 3 || u.Chunk.Text != "[redacted] older\n" {
 		t.Fatal(u, err)
+	}
+}
+
+func TestTailGrowthCompletionAndReset(t *testing.T) {
+	var phase atomic.Int32
+	var fetches atomic.Int32
+	c, _ := testClient(t, config.Direct, func(w http.ResponseWriter, r *http.Request) {
+		p := phase.Load()
+		if strings.HasSuffix(r.URL.Path, "stdout/") {
+			fetches.Add(1)
+			total := 1000
+			if p >= 1 {
+				total = 1_000_000
+			}
+			if p == 3 {
+				total = 2
+			}
+			writeTestOutput(t, w, r, total, func(i int) string { return strconv.Itoa(i) + "\n" })
+			return
+		}
+		status := "running"
+		if p >= 1 {
+			status = "successful"
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{"id": 1, "type": "job", "status": status, "event_processing_finished": p >= 2, "related": map[string]string{"stdout": "/api/v2/jobs/1/stdout/"}}); err != nil {
+			t.Error(err)
+		}
+	})
+	s := c.NewOutputSession(context.Background(), JobRef{1, PlaybookJob})
+	s.factory = func() (*OutputStore, error) { return testStore(t, DefaultOutputLimits()), nil }
+	var waits []time.Duration
+	s.wait = func(ctx context.Context, d time.Duration) error { waits = append(waits, d); return ctx.Err() }
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	for p := int32(0); p < 3; p++ {
+		phase.Store(p)
+		u, err := s.Next(10)
+		end := 1000
+		if p >= 1 {
+			end = 1_000_000
+		}
+		if err != nil || u.Chunk.Start != end-10 || u.Cursor.Line != end || u.Complete != (p == 2) {
+			t.Fatal(u, err)
+		}
+	}
+	if fetches.Load() != 3 || len(s.store.index) != 20 || waits[1] != 2*time.Second || waits[2] != 2*time.Second {
+		t.Fatal("growth backfilled history or busy polled", fetches.Load(), len(s.store.index), waits)
+	}
+	phase.Store(3)
+	for _, read := range []func() (OutputUpdate, error){
+		func() (OutputUpdate, error) { return s.Next(10) },
+		func() (OutputUpdate, error) { return s.Read(context.Background(), 0, 1) },
+	} {
+		_, err := read()
+		var api *APIError
+		if !errors.As(err, &api) || api.Kind != History || s.store.Cursor().Line != 1_000_000 {
+			t.Fatal("reset lost accepted output", err, s.store.Cursor())
+		}
 	}
 }

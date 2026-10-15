@@ -211,6 +211,13 @@ must remain viewable and clearly indicate that output is unavailable.
 Workflow jobs must provide navigation to their child jobs and the
 output available on those jobs.
 
+Opening output with `o` must show the latest bounded window in chronological
+order, without downloading or replaying the entire job log. Fetch earlier ranges
+only as the user scrolls or pages up, reusing cached history within the existing
+resource budgets. Live polling and `f` follow must retrieve the latest window
+directly, without automatically backfilling skipped history. Reading older output
+must preserve the visible position while polling continues.
+
 Live output must support scrolling through received output and
 following newly arriving output. Recoverable connection failures
 must be displayed clearly, and following must be resumable without

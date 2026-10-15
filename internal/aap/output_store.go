@@ -146,8 +146,9 @@ func (s *OutputStore) remember(n int, text string) {
 	}
 }
 
-// Accept validates and persists before advancing the live cursor. Older ranges
-// and overlapping last lines never move the cursor backwards.
+// Accept validates and persists before advancing the live cursor. Cached ranges
+// may be sparse: history is loaded on demand and live updates can skip ahead.
+// Older ranges and overlapping last lines never move the cursor backwards.
 func (s *OutputStore) Accept(c OutputChunk) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -157,8 +158,18 @@ func (s *OutputStore) Accept(c OutputChunk) error {
 	if err := validateChunk(c); err != nil {
 		return err
 	}
-	if s.cursor.Line > 0 && c.Start > s.cursor.Line {
-		return apiError(History, "Gap in output; reload the missing range")
+	// A live jump can leave the previous unterminated line outside the new
+	// window. Invalidate it so a later history read retrieves its final text.
+	stale := s.cursor.Line - 1
+	dropPartial := false
+	if stale >= 0 && c.Start > stale && c.End > s.cursor.Line {
+		if _, cached := s.index[stale]; cached {
+			rows, err := s.readLines(stale, stale+1)
+			if err != nil {
+				return err
+			}
+			dropPartial = !strings.HasSuffix(rows[0].Text, "\n")
+		}
 	}
 	raw := outputLines(c.Text)
 	changes := make([]storedLine, 0, len(raw))
@@ -215,6 +226,13 @@ func (s *OutputStore) Accept(c OutputChunk) error {
 			if err := s.evictOldest(); err != nil {
 				return err
 			}
+		}
+	}
+	if dropPartial {
+		delete(s.index, stale)
+		if text, ok := s.memory[stale]; ok {
+			s.memoryBytes -= len(text) + 64
+			delete(s.memory, stale)
 		}
 	}
 	s.cursor.Line = max(s.cursor.Line, c.End)

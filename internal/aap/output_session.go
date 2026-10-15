@@ -70,6 +70,9 @@ func (s *OutputSession) Read(ctx context.Context, start, end int) (OutputUpdate,
 	if err != nil {
 		return OutputUpdate{}, err
 	}
+	if chunk.AbsoluteEnd < s.store.Cursor().Line {
+		return OutputUpdate{}, apiError(History, "Output reset; previous output is retained")
+	}
 	if err = s.store.Accept(chunk); err != nil {
 		return OutputUpdate{}, err
 	}
@@ -110,7 +113,7 @@ func waitContext(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// Next waits in the API layer, then retrieves one bounded increment. Calling it
+// Next waits in the API layer, then retrieves the latest bounded window. Calling it
 // sequentially creates backpressure: at most one update is pending, with no producer
 // goroutine or unbounded message queue. History reads share the cache mutex.
 func (s *OutputSession) Next(viewLines int) (OutputUpdate, error) {
@@ -134,8 +137,8 @@ func (s *OutputSession) Next(viewLines int) (OutputUpdate, error) {
 		return OutputUpdate{}, apiError(Unsupported, "follow output")
 	}
 	cursor := s.store.Cursor()
-	start := max(0, cursor.Line-1)
-	chunk, err := s.client.output(s.ctx, d, start, start+OutputLines)
+	lines := min(max(viewLines, 1), OutputLines)
+	chunk, err := s.client.output(s.ctx, d, -lines, 0)
 	if err != nil {
 		return s.failed(err)
 	}
@@ -146,8 +149,7 @@ func (s *OutputSession) Next(viewLines int) (OutputUpdate, error) {
 		return OutputUpdate{}, err
 	}
 	cursor = s.store.Cursor()
-	viewStart := max(0, cursor.Line-min(max(viewLines, 1), OutputLines))
-	text, err := s.store.Read(viewStart, cursor.Line)
+	text, err := s.store.Read(chunk.Start, chunk.End)
 	if err != nil {
 		return OutputUpdate{}, err
 	}
@@ -155,11 +157,8 @@ func (s *OutputSession) Next(viewLines int) (OutputUpdate, error) {
 	s.delay = 2 * time.Second
 	known := d.EventProcessingFinished != nil
 	complete := d.Status.Terminal() && known && *d.EventProcessingFinished && cursor.Line >= chunk.AbsoluteEnd
-	// Catch up immediately when the bounded range did not reach the retained end.
-	if cursor.Line < chunk.AbsoluteEnd {
-		s.delay = 0
-	}
-	return OutputUpdate{Chunk: OutputChunk{viewStart, cursor.Line, chunk.AbsoluteEnd, text}, Cursor: cursor, Status: d.Status, Complete: complete, CompletionKnown: known}, nil
+	chunk.Text = text
+	return OutputUpdate{Chunk: chunk, Cursor: cursor, Status: d.Status, Complete: complete, CompletionKnown: known}, nil
 }
 func (s *OutputSession) failed(err error) (OutputUpdate, error) {
 	if s.ctx.Err() != nil {

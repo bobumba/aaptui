@@ -369,7 +369,12 @@ Quitting or leaving output cancels local work, not server jobs.
 
 ## Output and caching
 
-Output polls every two seconds, with immediate bounded catch-up when behind.
+Press `o` in job details to open the latest screenful of output. Lines remain in
+chronological order; Page Up/Ctrl-U or up/`k` loads earlier output on demand.
+Opening output does not download or replay the entire job log.
+
+Output polls every two seconds for the latest bounded window, skipping intervening
+history when output grows rapidly. `f` returns directly to the newest lines.
 Recoverable failures retain the cursor and retry with exponential backoff capped
 at 30 seconds (rate-limit guidance may extend a wait to 60 seconds). Authentication
 and permission failures stop automatic retries; `r` attempts to resume.
@@ -379,9 +384,10 @@ are cancelled, and old-session results are ignored.
 
 Ranged JSON stdout is decoded as raw text. ANSI/control sequences are removed and
 the known token is redacted before display or storage. Overlapping last lines are
-replaced to handle mutable partial lines. Final output is drained using terminal
-status plus `event_processing_finished`; if that field is absent, the UI reports
-unknown completion evidence and continues polling until you leave.
+replaced to handle mutable partial lines; a partial line skipped by a live jump
+is fetched again when requested as history. The final latest window is fetched
+using terminal status plus `event_processing_finished`; if that field is absent,
+the UI reports unknown completion evidence and continues polling until you leave.
 System jobs with inline stdout use bounded client-side line slicing.
 
 Limits per output session:
@@ -399,11 +405,16 @@ with the known token redacted. Owned session files are removed on screen close
 and app exit; storage and cleanup failures are reported.
 
 Uncached older lines are fetched on demand without moving the live cursor
-backwards. Expired history, gaps, resets, byte budgets, and server stdout limits
-produce explicit errors. There is no download-only fallback for output exceeding
+backwards. Unloaded ranges are allowed in the cache. Expired history, unexpected
+ranges, resets, byte budgets, and server stdout limits produce explicit errors.
+There is no download-only fallback for output exceeding
 the server display limit. Inline system stdout above 256 KiB is rejected. A hard
 kill or interrupted process can leave private session directories; inspect and
 remove those specific leftovers yourself. The app does not sweep other sessions.
+
+Tail requests bound client transfer, caching, and rendering work. The reviewed
+upstream server still reads the full stdout to select a range, and its display
+limit still applies. Actual AAP 2.6 tail behavior remains unverified.
 
 ## Verification and limitations
 

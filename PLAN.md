@@ -1,8 +1,8 @@
 # AAP TUI Implementation Plan
 
-Status: completed milestones have been removed. The saved-URL selection
-milestone below is complete and verified offline. Deployed AAP 2.6 and
-manual interactive-terminal validation remain unavailable.
+Status: earlier completed milestones have been removed. The job-output milestone
+below is implemented and verified offline. Deployed AAP 2.6 and manual
+interactive-terminal validation remain unavailable.
 
 This plan refines `SPEC.md` and follows `AGENTS.md`. No application code is
 authorized by the design discussion alone. Implement one milestone at a time
@@ -200,10 +200,17 @@ type. Decode output formats in the API layer and sanitize external terminal
 control sequences before rendering. Do not assume JSON content is HTML or plain
 text without reviewing its contract. Do not assume HTTP byte-range support.
 
+Opening output with `o` starts at the newest available lines. Fetch the latest
+bounded window and its absolute output end in one request; do not walk from
+line zero to reach it. Keep lines in chronological order within the
+viewport. Fetch earlier ranges only when the user scrolls or pages upward.
+
 Maintain a cursor per job/output session. Accept validated chunks into the output
-store before advancing the cursor. Handle overlapping ranges and mutable partial
-lines without duplication. Surface gaps, resets, expired output, and API output
-size limits explicitly instead of silently dropping data.
+store before advancing the cursor. Track cached ranges separately from the live
+cursor so initially unloaded history is allowed and reading older ranges never
+moves the live cursor backward. Handle overlapping ranges and mutable partial
+lines without duplication. Distinguish unloaded history from unexpected gaps;
+surface resets, expired output, and API output size limits explicitly.
 
 Use a bounded viewport/history window in RAM and a bounded, indexed disk cache.
 Create private session directories under `~/.cache/aaptui/` using `os.UserHomeDir`,
@@ -231,11 +238,15 @@ Authentication/permission failures stop automatic retries. Use deterministic tim
 controls in tests rather than real sleeps.
 
 Scrolling up pauses automatic scrolling, not output collection. An explicit follow
-action returns to the newest output. Leaving the output screen cancels its context,
-requests, retry waits, and producer activity. Bound pending updates and ignore
-messages from old session identifiers. Drain final output using the completion
-evidence supported by the API; do not equate terminal job status with immediate
-output completeness. Quitting stops all local activity without cancelling jobs.
+action returns to the newest output with a bounded fetch. Poll for the latest
+window while a job is active without automatically downloading intervening
+history, and preserve the user's position while reading older output. Leaving the
+output screen cancels its context, requests, retry waits, and producer activity.
+Bound pending updates and ignore messages from old session identifiers. Use the
+completion evidence supported by the API and fetch the final latest window before
+stopping; do not equate terminal job status with immediate output completeness or
+require downloading all history. Quitting stops all local activity without
+cancelling jobs.
 
 Workflow details show child nodes, including pending nodes without a job and
 inaccessible/deleted children. Allow navigation into nested workflows and child
@@ -256,51 +267,69 @@ explicit Launch/Cancel buttons; ordinary typing stays within the focused input.
 
 ## Milestones and acceptance tests
 
-### 1. Select a saved AAP URL at startup
+### 1. Open job output at the end and load history on demand
 
 Status: complete (offline verification).
 
-When launching the program, display a selectable list of URLs from the user's
-configuration instead of "Load current configuration". Selecting a URL opens
-that connection using its saved settings and credentials. Keep "Create new
-configuration" available.
+Previously, pressing `o` fetched stdout at line zero and immediately paged
+through successive chunks until reaching the end. Output now opens with an
+initial view of the latest lines. The user usually needs the result at
+the bottom and should read earlier output by paging upward, conserving network,
+memory, disk, and terminal-rendering work.
 
 Acceptance criteria:
 
-- List saved AAP URLs before opening the main TUI, including when only one URL
-  is saved. Support keyboard selection and show no tokens or login credentials.
-- Load the selected URL's connection mode, TLS setting, and associated token.
-  Keep tokens bound to their API origins and prompt for missing credentials
-  through the existing authentication flow.
-- Retain multiple connections in the user's configuration. Creating a connection
-  must preserve other saved connections and unrelated settings. Continue reading
-  existing single-connection configuration files without losing credentials.
-- Keep new setup available when no saved URLs exist. Explain unavailable or
-  invalid configurations safely; do not silently overwrite malformed storage.
-- Preserve private home credential storage, private permissions, atomic writes,
-  and existing authentication safeguards. Cancellation, authentication failures,
-  and failed writes leave saved connections intact.
-- Use the agreed `connections` array, migrate legacy files only after successful
-  authentication, and update matching API origins. Apply selected-file/environment
-  overrides only to their effective URL entry; preserve other saved entries.
-- Preserve cancellation, noninteractive startup errors, and terminal restoration.
-  Keep startup orchestration in `cmd/aaptui`, loading/persistence in
-  `internal/config`, and authentication in `internal/aap`.
-- Add regression tests for zero, one, and multiple saved URLs; selecting different
-  connections with distinct settings and tokens; legacy configuration;
-  creating a connection without losing others; invalid configurations;
-  override behavior; secret redaction; cancellation; and terminal restoration.
-  Use fake servers and temporary homes.
-- Update `README.md` and relevant API-contract notes during implementation to
-  describe URL selection, the configuration format, and override behavior.
+- `o` opens at the bottom for both completed and active jobs. Show the latest
+  viewport immediately after bounded loading, with lines in their original
+  chronological order. Do not replay the job's output through the terminal.
+- Retrieve a bounded latest window and its current output end in one snapshot
+  using reviewed API tail-range semantics. The initial request count and
+  transferred data must remain bounded independently of total job length. Do not fetch all stdout
+  and then discard the beginning, or sequentially page through it to find the end.
+- Page Up/Ctrl-U and up/`k` load earlier ranges only as needed. Reuse cached
+  ranges, keep scrolling stable when history arrives, and preserve Page
+  Down/Ctrl-D and down/`j` navigation back toward the latest output.
+- Keep live polling and `f` follow behavior, but fetch only a bounded latest
+  window when output grows or follow resumes. Do not automatically backfill
+  intervening history. Scrolling up holds the visible position while polling
+  continues; returning to follow shows the newest lines directly.
+- Permit sparse cached ranges without treating intentionally unloaded history
+  as corruption. Historical reads must not rewind the live cursor. Preserve
+  overlap handling, mutable partial lines, and explicit reset/expired-history
+  errors, including when output changes between discovery and range reads.
+- Retain the existing per-session limits: 256 lines and 256 KiB per chunk/window,
+  256 KiB of cached text in memory, 16 MiB on disk, 65,536 indexed lines, and
+  256 cache files. Keep requests and pending updates bounded; avoid rendering
+  intermediate pages or repeatedly fetching unchanged cached history.
+- Handle empty output, output shorter than the viewport, unsupported stdout,
+  inline system-job stdout, server display limits, and delayed final output.
+  Stop polling when supported completion evidence and the final latest window
+  are available, without requiring the entire history to have been downloaded.
+- Preserve cancellation on leaving output, stale-session message rejection,
+  retries, secret redaction, terminal sanitization, private cache permissions,
+  cleanup, and terminal restoration.
+- Add fake-server regression tests with very large logical stdout. Assert a
+  bounded opening request count and response size, no traversal from line zero,
+  on-demand history requests, cache reuse, cursor stability, active-job growth,
+  follow resumption, completion, and empty/short output. Add TUI tests for initial
+  bottom placement, upward paging, and stable history position during polling.
+- Keep transport/range/cache logic in `internal/aap` and viewport/navigation
+  behavior in `internal/tui`. Review and record any newly relied-on range
+  semantics in `docs/API_CONTRACT.md`; update `README.md` and `SPEC.md` during
+  implementation to describe opening at the end and loading history on demand.
 
-Implemented: startup lists saved and effective override URLs with keyboard
-selection and scrolling. Connections retain per-origin settings and tokens;
-successful saves migrate legacy files and preserve other origins. Regression
-tests cover selection, overrides, migration, storage failures, unavailable entries,
-secret redaction, cancellation, EOF, and Linux terminal restoration.
-Changed Go files were formatted; `go test ./...`, `go vet ./...`, and
-`git diff --check` pass. Deployed AAP 2.6 validation remains unavailable.
+Implemented: output opens and polls with `start_line=-N`, omitting `end_line`,
+so one stdout request retrieves the latest screenful and its absolute range.
+Sparse caching supports live jumps and on-demand history without rewinding the
+cursor; skipped mutable partial lines are invalidated for later reload. Following
+discards pending history results, and polling preserves history position and
+loading state. The upstream range behavior and server-side scan limitation are
+recorded in `docs/API_CONTRACT.md`. Regression tests cover million-line logical
+output, bounded opening work, cache reuse, jumps, partial lines, completion,
+resets, malformed/oversized responses, and TUI history/follow request ordering.
+Changed Go files were formatted; `go test ./...`, `go vet ./...`,
+`go test -race ./...`, and `git diff --check` passed. Deployed AAP 2.6 and manual
+interactive-terminal validation remain unavailable.
 
 For each implementation milestone: format changed Go files with `gofmt -w`, run
 `go test ./...` and `go vet ./...`, review changes for unintended scope, and update

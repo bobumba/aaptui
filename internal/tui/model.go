@@ -414,7 +414,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.outputPending = false
-		m.loading = false
+		if m.following {
+			m.loading = false
+		}
 		if msg.err != nil {
 			m.err = msg.err
 			return m, nil
@@ -547,7 +549,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				complete := m.outputUpdate.Complete
 				known := m.outputUpdate.CompletionKnown
 				retrying := m.outputUpdate.Retrying
+				cursor := m.outputUpdate.Cursor.Line
+				end := m.outputUpdate.Chunk.AbsoluteEnd
 				m.outputUpdate = v
+				m.outputUpdate.Cursor.Line = max(cursor, v.Cursor.Line)
+				m.outputUpdate.Chunk.AbsoluteEnd = max(end, v.Chunk.AbsoluteEnd)
 				m.outputUpdate.Status = status
 				m.outputUpdate.Complete = complete
 				m.outputUpdate.CompletionKnown = known
@@ -688,9 +694,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selected = max(0, m.selected-1)
 		case "f":
 			if m.screen == outputScreen {
+				// Discard an in-flight history read before following again.
+				if m.requestCancel != nil {
+					m.requestCancel()
+				}
+				m.generation++
+				m.loading = false
 				m.following = true
-				start := max(0, m.outputUpdate.Cursor.Line-m.outputLines())
-				return m, tea.Batch(m.readOutput(start), m.nextOutput())
+				return m, m.nextOutput()
 			}
 		case "r":
 			if m.screen == templateScreen && m.templateDetail.Ref.Type == aap.PlaybookTemplate && m.templates != nil && (!m.hasTemplateJobs() || !m.templateJobsFocus) {
@@ -772,6 +783,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.outputID++
 					m.outputPending = false
 					m.outputUpdate = aap.OutputUpdate{}
+					m.loading = true
 					return m, m.nextOutput()
 				}
 			}

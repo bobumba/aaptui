@@ -81,9 +81,6 @@ func TestStoreBudgetsReloadAndFailure(t *testing.T) {
 	if err := s.Accept(OutputChunk{3, 4, 4, "new\n"}); err == nil || s.Cursor().Line != 3 {
 		t.Fatal("cursor advanced on storage failure")
 	}
-	if err := s.Accept(OutputChunk{5, 6, 6, "gap\n"}); err == nil {
-		t.Fatal("gap accepted")
-	}
 	if err := s.Accept(OutputChunk{2, 4, 4, "one\n"}); err == nil {
 		t.Fatal("bad range accepted")
 	}
@@ -105,6 +102,33 @@ func TestCacheSymlinkAndReadFailure(t *testing.T) {
 	}
 	if _, err := s.Read(0, 1); err == nil {
 		t.Fatal("read failure ignored")
+	}
+}
+
+func TestStoreSparseHistoryAndLiveJump(t *testing.T) {
+	s := testStore(t, DefaultOutputLimits())
+	for _, chunk := range []OutputChunk{
+		{1000, 1002, 1002, "one\npart"},
+		{2000, 2002, 2002, "new\nlast\n"},
+		{999, 1002, 2002, "older\none\npartial\n"},
+	} {
+		if err := s.Accept(chunk); err != nil {
+			t.Fatal(err)
+		}
+		if chunk.Start == 2000 {
+			if _, err := s.Read(1001, 1002); err == nil {
+				t.Fatal("jump retained stale partial line")
+			}
+		}
+	}
+	if s.Cursor().Line != 2002 || len(s.index) != 5 {
+		t.Fatal("history rewound cursor or backfilled gap", s.Cursor(), len(s.index))
+	}
+	if text, err := s.Read(999, 1002); err != nil || text != "older\none\npartial\n" {
+		t.Fatal(text, err)
+	}
+	if _, err := s.Read(1002, 1003); err == nil {
+		t.Fatal("uncached gap treated as cached history")
 	}
 }
 func TestStoreReportsCleanupFailure(t *testing.T) {

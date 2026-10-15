@@ -356,8 +356,30 @@ Request `stdout/?format=json&start_line=N&end_line=M`. Ranges are zero-based,
 end-exclusive Python line slices. JSON contains raw (possibly ANSI-bearing) text
 in `content`, plus `range.start`, `range.end`, `range.absolute_end`. No base64
 encoding is requested. JSON is not HTML. HTTP byte ranges are not assumed.
-The final unterminated line can change; reread one overlapping line at the cursor.
-Store validated data before advancing. Older ranges are independently fetched.
+The final unterminated line can change; refresh it whenever it remains in the
+latest window. Store validated data before advancing. Older ranges are
+independently fetched.
+
+Tail ranges reviewed 2026-10-15 against the same pinned AWX commit
+`94e5795dfc37b95c576d61f3e3b4e936c021548c`, specifically
+[`UnifiedJobStdout.retrieve`](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/api/views/__init__.py)
+and [`UnifiedJob._result_stdout_raw_limited`](https://github.com/ansible/awx/blob/94e5795dfc37b95c576d61f3e3b4e936c021548c/awx/main/models/unified_jobs.py).
+`start_line=-N` with `end_line` omitted selects the latest N lines in one
+snapshot. The reported end equals `absolute_end`; the reported start is
+`absolute_end-N`, which can be negative for short/empty output even though Python
+clamps the actual content start to zero. Accept that exact negative start or its
+clamped equivalent, normalize it, and validate the end, line count, and byte
+budget. Reject other range inconsistencies. These are source-derived assumptions,
+not deployed AAP 2.6 evidence.
+
+Opening and polling use one bounded tail request after refreshing job details;
+no discovery-to-fetch race or sequential catch-up is needed. Polls remain two
+seconds apart even after large growth. The cache permits unloaded ranges; reads
+fetch history on demand and never rewind the live cursor. If a jump skips an
+already cached unterminated last line, invalidate that line so a later history
+read refreshes it. Reject shrinking output before changing accepted data. The
+upstream implementation still reads the full stdout before slicing, so this
+reduces client work and transferred data, not the server's per-request scan.
 
 The upstream display byte limit applies even to bounded line requests. Its JSON
 fallback is a one-line explanatory message, not actual output. Recognize that
@@ -368,7 +390,8 @@ or resets and must be surfaced.
 
 Terminal job status alone is insufficient. Details may expose
 `event_processing_finished` (absent in list responses). When true for a terminal
-job, continue fetching until the accepted cursor reaches `absolute_end`. If the
+job, accept the latest window through `absolute_end` before stopping; loading
+all preceding history is unnecessary. If the
 field is absent, continue polling and show that final-output evidence is unknown;
 do not guess completeness from a quiet interval.
 

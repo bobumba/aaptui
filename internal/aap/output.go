@@ -49,6 +49,8 @@ func (c *Client) Output(ctx context.Context, ref JobRef, start, end int) (Output
 	return c.output(ctx, d, start, end)
 }
 func (c *Client) output(ctx context.Context, d JobDetails, start, end int) (OutputChunk, error) {
+	// A negative start with no end requests the last N lines in one snapshot.
+	tail := start < 0
 	if d.Ref.Type == SystemJob && d.systemText != nil {
 		text := *d.systemText
 		if strings.HasPrefix(text, "Standard Output too large to display (") {
@@ -58,6 +60,9 @@ func (c *Client) output(ctx context.Context, d JobDetails, start, end int) (Outp
 			return OutputChunk{}, apiError(History, "Inline system stdout exceeds client byte budget")
 		}
 		lines := outputLines(text)
+		if tail {
+			start, end = max(0, len(lines)+start), len(lines)
+		}
 		if start > len(lines) {
 			return OutputChunk{}, apiError(History, "Output reset or requested history expired")
 		}
@@ -65,6 +70,9 @@ func (c *Client) output(ctx context.Context, d JobDetails, start, end int) (Outp
 		return OutputChunk{start, end, len(lines), strings.Join(lines[start:end], "")}, nil
 	}
 	q := url.Values{"format": {"json"}, "start_line": {strconv.Itoa(start)}, "end_line": {strconv.Itoa(end)}}
+	if tail {
+		q.Del("end_line")
+	}
 	u, err := c.safeLink(d.stdout)
 	if err != nil {
 		return OutputChunk{}, err
@@ -81,6 +89,22 @@ func (c *Client) output(ctx context.Context, d JobDetails, start, end int) (Outp
 		return OutputChunk{}, &APIError{Kind: History, Operation: "Server stdout display limit exceeded; download is required"}
 	}
 	chunk := OutputChunk{Start: *w.Range.Start, End: *w.Range.End, AbsoluteEnd: *w.Range.AbsoluteEnd, Text: *w.Content}
+	if tail {
+		// AWX reports absolute_end-N even for short/empty output, although
+		// Python slicing clamps the actual content start to zero.
+		expected := max(0, chunk.AbsoluteEnd+start)
+		if chunk.Start != chunk.AbsoluteEnd+start && chunk.Start != expected {
+			return OutputChunk{}, apiError(Malformed, "read output tail range")
+		}
+		chunk.Start = expected
+		if chunk.End != chunk.AbsoluteEnd {
+			return OutputChunk{}, apiError(Malformed, "read output tail range")
+		}
+		if err := validateChunk(chunk); err != nil {
+			return OutputChunk{}, err
+		}
+		return chunk, nil
+	}
 	// When querying past the retained end, upstream can return end < start.
 	if chunk.AbsoluteEnd < start {
 		return OutputChunk{}, apiError(History, "Output reset or requested history expired")
